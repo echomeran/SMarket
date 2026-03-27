@@ -19,3 +19,7 @@ Thumbs.db
 /dist
 /build
 .next/
+
+#IDE dosyaları
+.vscode/
+.idea/
