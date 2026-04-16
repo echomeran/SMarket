@@ -1,152 +1,134 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Cashier() {
-  
+  const [products, setProducts] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [barcodeInput, setBarcodeInput] = useState("");
 
-  const [inventory, setInventory] = useState(() => {
-  const saved = localStorage.getItem("smarket_inventory");
-  return saved ? JSON.parse(saved) : [];
-});
+  const fetchProducts = async () => {
+    const token = localStorage.getItem('token');
+    const res = await fetch('http://localhost:5000/api/products', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    const result = await res.json();
+    if (result.status === "success") setProducts(result.data);
+  };
 
-  // STATE'LER
-  const [cart, setCart] = useState([]); // Sepetteki ürünler
-  const [barcodeInput, setBarcodeInput] = useState(""); // Barkod kutusuna yazılan değer
+  useEffect(() => { fetchProducts(); }, []);
 
-  // BARKOD OKUTMA İŞLEMİ
+  // Ortak Ekleme Fonksiyonu (Hem barkod hem tıklama için)
+  const addToCart = (product) => {
+    if (product.quantity <= 0) return alert("Bu ürünün stoğu kalmamış!");
+
+    const existingItem = cart.find(item => item.barcode === product.barcode);
+    if (existingItem) {
+      if (existingItem.qty + 1 > product.quantity) return alert("Mevcut tüm stok sepette!");
+      setCart(cart.map(item => item.barcode === product.barcode ? { ...item, qty: item.qty + 1 } : item));
+    } else {
+      setCart([...cart, { ...product, qty: 1 }]);
+    }
+  };
+
+  // Barkod Okutma (Enter'a basınca çalışır)
   const handleScan = (e) => {
     e.preventDefault();
-    
-    // Girilen barkodu envanterde ara
-    const foundProduct = inventory.find(p => p.barcode === barcodeInput);
-
-    if (foundProduct) {
-      // Ürün sepette zaten var mı kontrol et
-      const existingItem = cart.find(item => item.barcode === foundProduct.barcode);
-      
-      if (existingItem) {
-        // Varsa miktarını 1 artır
-        setCart(cart.map(item => 
-          item.barcode === foundProduct.barcode 
-            ? { ...item, quantity: item.quantity + 1 } 
-            : item
-        ));
-      } else {
-        // Yoksa sepete miktar=1 olarak yeni ekle
-        setCart([...cart, { ...foundProduct, quantity: 1 }]);
-      }
-      setBarcodeInput(""); // Okutma sonrası kutuyu temizle
+    const found = products.find(p => p.barcode === barcodeInput);
+    if (found) {
+      addToCart(found);
+      setBarcodeInput("");
     } else {
-      alert("Product not found! Check the barcode.");
+      alert("Ürün bulunamadı!");
     }
   };
 
-  // SEPETTEN ÜRÜN ÇIKARMA
-  const removeItem = (barcode) => {
-    setCart(cart.filter(item => item.barcode !== barcode));
-  };
-
-  // TOPLAM FİYAT HESAPLAMA
-  const totalPrice = cart.reduce((total, item) => total + (item.price * item.quantity), 0);
-
-  // SATIŞI TAMAMLAMA
-  // SATIŞI TAMAMLAMA VE STOKTAN DÜŞME
-  const handleCheckout = () => {
-    if (cart.length === 0) {
-      alert("Cart is empty!");
-      return;
-    }
-
-    // 1. Sepetteki ürünlerin miktarını ana envanterden (inventory) çıkar
-    const updatedInventory = inventory.map(invItem => {
-      // Bu envanter ürünü sepette var mı diye bakıyoruz
-      const cartItem = cart.find(item => item.barcode === invItem.barcode);
-      
-      if (cartItem) {
-        // Sepette varsa, ana stoktan sepetteki miktarı çıkar
-        return { ...invItem, stock: invItem.stock - cartItem.quantity };
-      }
-      return invItem; // Sepette yoksa aynen bırak
+  const handleCheckout = async () => {
+    const token = localStorage.getItem('token');
+    const response = await fetch('http://localhost:5000/api/sales', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ items: cart })
     });
-
-    // 2. Kasiyerin hafızasındaki envanteri güncelle 
-    setInventory(updatedInventory);
-
-    // 3. Yeni (azalmış) stoku localStorage'a kaydet ki Müdürün ekranında da düşsün
-    localStorage.setItem("smarket_inventory", JSON.stringify(updatedInventory));
-
-    alert(`Sale Completed Successfully! Total: ₺${totalPrice.toFixed(2)}`);
-    setCart([]); // Satış bitince Kasiyerin sepetini boşalt
+    if (response.ok) {
+      alert("Satış Tamamlandı!");
+      setCart([]); fetchProducts();
+    }
   };
 
   return (
-    <div style={{ display: 'flex', height: '100vh', fontFamily: 'sans-serif', backgroundColor: '#f3f4f6' }}>
-      
-      {/* SOL PANEL: Barkod Okutma Kısmı */}
-      <div style={{ flex: '1', padding: '30px', borderRight: '2px solid #e5e7eb' }}>
-        <h2 style={{ color: '#333', marginTop: 0 }}>Cashier Terminal</h2>
-        
-        {/* Barkod Formu */}
-        <form onSubmit={handleScan} style={{ display: 'flex', gap: '10px', marginBottom: '30px' }}>
-          <input 
-            type="text" 
-            placeholder="Scan or Type Barcode (e.g. 869123456)" 
-            value={barcodeInput}
-            onChange={(e) => setBarcodeInput(e.target.value)}
-            style={{ flex: '1', padding: '15px', fontSize: '18px', borderRadius: '5px', border: '1px solid #ccc' }}
-            autoFocus
+    <div style={{ display: 'flex', height: '100vh', backgroundColor: '#f1f5f9', fontFamily: 'sans-serif' }}>
+
+      {/* SOL: Ürün Seçim Alanı */}
+      <div style={{ flex: 1, padding: '25px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
+          <form onSubmit={handleScan} style={{ flex: 1 }}>
+            <input
+              placeholder="Barkod Okut veya Yaz..."
+              value={barcodeInput}
+              onChange={(e) => setBarcodeInput(e.target.value)}
+              style={{ width: '100%', padding: '15px', borderRadius: '8px', border: '2px solid #3b82f6', fontSize: '18px' }}
+              autoFocus
+            />
+          </form>
+          <input
+            placeholder="İsimle Ürün Ara..."
+            onChange={(e) => setSearchTerm(e.target.value)}
+            style={{ width: '200px', padding: '15px', borderRadius: '8px', border: '1px solid #ccc' }}
           />
-          <button type="submit" style={{ padding: '15px 30px', fontSize: '18px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
-            Add
-          </button>
-        </form>
+        </div>
 
-        {/* Bilgi Kutusu: Hangi barkodların çalıştığını görmek için */}
-        <div style={{ backgroundColor: '#e0f2fe', padding: '15px', borderRadius: '5px', color: '#0369a1' }}>
-          <strong>Test Barcodes:</strong><br/>
-          Milk: 869123456 <br/>
-          Apple: 869111222 <br/>
-          Pasta: 869333444
+        {/* ÜRÜN KARTLARI (Grid) */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '15px', overflowY: 'auto' }}>
+          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+            <div
+              key={p.barcode}
+              onClick={() => addToCart(p)}
+              style={{
+                backgroundColor: 'white', padding: '15px', borderRadius: '12px', cursor: 'pointer',
+                textAlign: 'center', boxShadow: '0 2px 4px rgba(0,0,0,0.05)', border: '1px solid #e2e8f0',
+                transition: 'transform 0.1s', opacity: p.quantity <= 0 ? 0.5 : 1
+              }}
+              onMouseDown={(e) => e.currentTarget.style.transform = 'scale(0.95)'}
+              onMouseUp={(e) => e.currentTarget.style.transform = 'scale(1)'}
+            >
+              <div style={{ fontSize: '30px', marginBottom: '10px' }}>📦</div>
+              <div style={{ fontWeight: 'bold', fontSize: '14px' }}>{p.name}</div>
+              <div style={{ color: '#3b82f6', fontWeight: 'bold', margin: '5px 0' }}>{p.price} ₺</div>
+              <div style={{ fontSize: '11px', color: '#64748b' }}>Stok: {p.quantity}</div>
+            </div>
+          ))}
         </div>
       </div>
 
-      {/* SAĞ PANEL: Fiş / Sepet Kısmı */}
-      <div style={{ width: '400px', backgroundColor: 'white', padding: '30px', display: 'flex', flexDirection: 'column', boxShadow: '-2px 0 10px rgba(0,0,0,0.05)' }}>
-        <h3 style={{ margin: '0 0 20px 0', borderBottom: '2px solid #f3f4f6', paddingBottom: '10px' }}>Current Sale (Receipt)</h3>
-        
-        {/* Sepetteki Ürünlerin Listesi */}
-        <div style={{ flex: '1', overflowY: 'auto' }}>
-          {cart.length === 0 ? (
-            <p style={{ color: '#9ca3af', textAlign: 'center', marginTop: '50px' }}>Cart is empty. Scan an item to begin.</p>
-          ) : (
-            cart.map((item, index) => (
-              <div key={index} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0', borderBottom: '1px dashed #e5e7eb' }}>
-                <div>
-                  <span style={{ fontWeight: 'bold', display: 'block' }}>{item.name}</span>
-                  <span style={{ fontSize: '14px', color: '#666' }}>{item.quantity} x ₺{item.price.toFixed(2)}</span>
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-                  <span style={{ fontWeight: 'bold' }}>₺{(item.price * item.quantity).toFixed(2)}</span>
-                  <button onClick={() => removeItem(item.barcode)} style={{ color: '#ef4444', background: 'none', border: 'none', cursor: 'pointer', fontSize: '16px' }}>✖</button>
-                </div>
-              </div>
-            ))
-          )}
+      {/* SAĞ: FİŞ (Cart) */}
+      <div style={{ width: '380px', backgroundColor: 'white', display: 'flex', flexDirection: 'column', borderLeft: '1px solid #e2e8f0' }}>
+        <div style={{ padding: '20px', borderBottom: '2px solid #f1f5f9' }}>
+          <h3>📋 Güncel Fiş</h3>
         </div>
 
-        {/* Toplam Fiyat ve Ödeme Butonu */}
-        <div style={{ marginTop: '20px', borderTop: '2px solid #333', paddingTop: '20px' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '24px', fontWeight: 'bold', marginBottom: '20px' }}>
-            <span>Total:</span>
-            <span>₺{totalPrice.toFixed(2)}</span>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '15px' }}>
+          {cart.map(item => (
+            <div key={item.barcode} style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', fontSize: '14px' }}>
+              <span>{item.name} <strong>x{item.qty}</strong></span>
+              <span>{(item.price * item.qty).toFixed(2)} ₺</span>
+            </div>
+          ))}
+        </div>
+
+        <div style={{ padding: '20px', backgroundColor: '#f8fafc' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '22px', fontWeight: 'bold' }}>
+            <span>TOPLAM</span>
+            <span>{cart.reduce((acc, i) => acc + (i.price * i.qty), 0).toFixed(2)} ₺</span>
           </div>
-          <button 
+          <button
             onClick={handleCheckout}
-            style={{ width: '100%', padding: '15px', fontSize: '18px', backgroundColor: '#0056b3', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
-            Complete Sale
+            disabled={cart.length === 0}
+            style={{ width: '100%', marginTop: '15px', padding: '15px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '8px', fontWeight: 'bold', cursor: 'pointer' }}
+          >
+            ÖDEME AL VE KAPAT
           </button>
         </div>
       </div>
-
     </div>
   );
 }

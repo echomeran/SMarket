@@ -26,9 +26,6 @@ const authenticateToken = (req, res, next) => {
     });
 };
 
-/**
- * 1. LOGIN API (Sprint 1 Borcu: Bcrypt eklendi)
- */
 app.post('/api/login', async (req, res) => {
     const { username, password } = req.body;
     try {
@@ -56,58 +53,55 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-/**
- * 3. FIFO SATIŞ MOTORU (Sprint 2 - Onarılmış Versiyon)
- */
-app.post('/api/sales', authenticateToken, async (req, res) => { // authenticateToken eklendi!
-    const { barcode, quantity_to_sell } = req.body;
+
+app.post('/api/sales', authenticateToken, async (req, res) => {
+    const { items } = req.body;
     const client = await db.connect();
 
     try {
         await client.query('BEGIN');
 
-        // A. Ürünü bul
-        const productRes = await client.query('SELECT product_id FROM products WHERE barcode = $1', [barcode]);
-        if (productRes.rows.length === 0) throw new Error("Ürün bulunamadı.");
-        const productId = productRes.rows[0].product_id;
+        for (const item of items) {
+            const productRes = await client.query('SELECT product_id FROM products WHERE barcode = $1', [item.barcode]);
+            if (productRes.rows.length === 0) throw new Error(`${item.name} bulunamadı.`);
+            const productId = productRes.rows[0].product_id;
 
-        // B. FIFO Sorgusu (Row-level locking)
-        const batchRes = await client.query(`
-            SELECT batch_id, quantity FROM batches 
-            WHERE product_id = $1 AND quantity > 0 
-            ORDER BY arrival_date ASC 
-            LIMIT 1 FOR UPDATE`, [productId]);
+            let kalanMiktar = item.qty;
 
-        if (batchRes.rows.length === 0) throw new Error("Stok yetersiz!");
+            // Elimizdeki tüm uygun partileri en eskiden en yeniye getir
+            const batchesRes = await client.query(`
+                SELECT batch_id, quantity FROM batches 
+                WHERE product_id = $1 AND quantity > 0
+                ORDER BY expiry_date ASC FOR UPDATE`, [productId]);
 
-        const oldestBatch = batchRes.rows[0];
+            if (batchesRes.rows.length === 0) throw new Error(`${item.name} için hiç stok yok!`);
 
-        // HATA FIX: yeniMiktar burada tanımlanmalı
-        const yeniMiktar = oldestBatch.quantity - quantity_to_sell;
+            for (const batch of batchesRes.rows) {
+                if (kalanMiktar <= 0) break;
 
-        if (yeniMiktar < 0) throw new Error("Bu partide yeterli ürün yok!");
+                const dusulecekMiktar = Math.min(batch.quantity, kalanMiktar);
 
-        // C. Stoktan Düş
-        await client.query(
-            'UPDATE batches SET quantity = $1 WHERE batch_id = $2',
-            [yeniMiktar, oldestBatch.batch_id]
-        );
+                // Stoktan düş
+                await client.query('UPDATE batches SET quantity = quantity - $1 WHERE batch_id = $2',
+                    [dusulecekMiktar, batch.batch_id]);
 
-        // D. Audit Log (SRS 1.2.7) - user_id artık req.user.id'den geliyor
-        await client.query(`
-            INSERT INTO audit_logs (user_id, action_type, table_affected, old_value, new_value)
-            VALUES ($1, $2, $3, $4, $5)`,
-            [
-                req.user.id,
-                'SATIŞ_FIFO',
-                'batches',
-                JSON.stringify({ quantity: oldestBatch.quantity }),
-                JSON.stringify({ quantity: yeniMiktar, batch_id: oldestBatch.batch_id })
-            ]
-        );
+                kalanMiktar -= dusulecekMiktar;
+            }
+
+            if (kalanMiktar > 0) {
+                throw new Error(`${item.name} için yeterli toplam stok yok! (Eksik: ${kalanMiktar})`);
+            }
+
+            // Audit Log
+            await client.query(`
+                INSERT INTO audit_logs (user_id, action_type, table_affected, new_value)
+                VALUES ($1, $2, $3, $4)`,
+                [req.user.id, 'SATIŞ_ONAY', 'batches', JSON.stringify({ barcode: item.barcode, total_sold: item.qty })]
+            );
+        }
 
         await client.query('COMMIT');
-        res.json({ status: "success", message: "Satış ve Log kaydı tamamlandı." });
+        res.json({ status: "success", message: "Tüm sepet başarıyla satıldı." });
 
     } catch (err) {
         await client.query('ROLLBACK');
@@ -117,8 +111,102 @@ app.post('/api/sales', authenticateToken, async (req, res) => { // authenticateT
     }
 });
 
-bcrypt.hash("123456", 10).then(hash => {
-    console.log("SENİN GÜVENLİ HASH'İN:", hash);
+app.get('/api/products', authenticateToken, async (req, res) => {
+    try {
+        const query = `
+            SELECT 
+                p.name, p.barcode, p.sale_price AS price,
+                COALESCE(SUM(b.quantity), 0) AS quantity,
+                MIN(b.expiry_date) AS expiry_date,
+                CASE 
+                    WHEN MIN(b.expiry_date) <= CURRENT_DATE THEN 'expired'
+                    WHEN MIN(b.expiry_date) <= CURRENT_DATE + INTERVAL '7 days' THEN 'warning'
+                    ELSE 'fresh'
+                END as status
+            FROM products p
+            LEFT JOIN batches b ON p.product_id = b.product_id
+            GROUP BY p.product_id, p.name, p.barcode, p.sale_price
+            ORDER BY status DESC, expiry_date ASC;
+        `;
+        const result = await db.query(query);
+        res.json({ status: "success", data: result.rows });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
 });
+
+app.post('/api/products', authenticateToken, async (req, res) => {
+    const { name, barcode, sale_price, category, stock, expiryDate, cost_price } = req.body;
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+
+        const productRes = await client.query(
+            'INSERT INTO products (name, barcode, sale_price, category) VALUES ($1, $2, $3, $4) RETURNING product_id',
+            [name, barcode, sale_price, category]
+        );
+        const productId = productRes.rows[0].product_id;
+
+        if (stock && stock > 0) {
+            await client.query(
+                'INSERT INTO batches (product_id, quantity, expiry_date, arrival_date, cost_price) VALUES ($1, $2, $3, CURRENT_DATE, $4)',
+                [productId, stock, expiryDate, cost_price]
+            );
+        }
+        await client.query('COMMIT');
+        res.json({ status: "success", message: "Ürün ve Maliyetli Stok Kaydedildi." });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ status: "error", message: err.message });
+    } finally { client.release(); }
+});
+
+app.get('/api/users/cashiers', authenticateToken, async (req, res) => {
+    try {
+        // Sadece kasiyer rolündekileri getir
+        const result = await db.query(
+            'SELECT user_id, username, full_name, salary, is_active FROM users WHERE role = $1',
+            ['cashier']
+        );
+        res.json({ status: "success", data: result.rows });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
+});
+
+app.post('/api/batches', authenticateToken, async (req, res) => {
+    const { barcode, quantity, expiry_date, cost_price, new_sale_price } = req.body;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // 1. Ürünü bul
+        const productRes = await client.query('SELECT product_id FROM products WHERE barcode = $1', [barcode]);
+        if (productRes.rows.length === 0) throw new Error("Ürün bulunamadı.");
+        const productId = productRes.rows[0].product_id;
+
+        // 2. Yeni partiyi (maliyetle) ekle
+        await client.query(
+            'INSERT INTO batches (product_id, quantity, expiry_date, arrival_date, cost_price) VALUES ($1, $2, $3, CURRENT_DATE, $4)',
+            [productId, quantity, expiry_date, cost_price]
+        );
+
+        // 3. EĞER yeni satış fiyatı girilmişse, etiketi de güncelle
+        if (new_sale_price && new_sale_price > 0) {
+            await client.query(
+                'UPDATE products SET sale_price = $1 WHERE product_id = $2',
+                [new_sale_price, productId]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({ status: "success", message: "Stok eklendi ve fiyat güncellendi." });
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ status: "error", message: err.message });
+    } finally { client.release(); }
+});
+
 
 app.listen(PORT, () => console.log(`🚀 SMarket Backend ${PORT} portunda aktif.`));
