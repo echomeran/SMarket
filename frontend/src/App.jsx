@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { Toaster } from 'react-hot-toast';
 import Login from "./pages/Login";
 import Manager from "./pages/Manager";
 import Cashier from "./pages/Cashier";
@@ -6,6 +7,7 @@ import Cashier from "./pages/Cashier";
 function App() {
   return (
     <BrowserRouter>
+      <Toaster position="top-right" />
       <Routes>
         {/* Adres çubuğunda ne yazıyorsa o sayfayı göster */}
         <Route path="/" element={<Login />} />

@@ -1,0 +1,159 @@
+const express = require('express');
+const db = require('../db');
+const authenticateToken = require('../middlewares/authMiddleware');
+const router = express.Router();
+
+router.post('/', authenticateToken, async (req, res) => {
+    const { items, customer_id, points_to_use } = req.body;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        let saleTotalAmount = 0;
+        let saleVatAmount = 0;
+        const ptsUsed = parseInt(points_to_use) || 0;
+
+        const saleRes = await client.query(
+            'INSERT INTO sales (cashier_id, customer_id, total_amount, vat_amount, points_used) VALUES ($1, $2, 0, 0, $3) RETURNING sale_id',
+            [req.user.id, customer_id || null, ptsUsed]
+        );
+        const saleId = saleRes.rows[0].sale_id;
+
+        for (const item of items) {
+            const productRes = await client.query('SELECT product_id, name, sale_price, vat_rate, reorder_qty FROM products WHERE barcode = $1', [item.barcode]);
+            if (productRes.rows.length === 0) throw new Error(`${item.name} bulunamadı.`);
+            const product = productRes.rows[0];
+
+            let kalanMiktar = item.qty;
+            const itemVat = (product.sale_price * (product.vat_rate / 100)) * item.qty;
+            const itemTotal = product.sale_price * item.qty;
+
+            saleVatAmount += itemVat;
+            saleTotalAmount += itemTotal;
+
+            const batchesRes = await client.query(`
+                SELECT batch_id, quantity FROM batches 
+                WHERE product_id = $1 AND quantity > 0
+                ORDER BY expiry_date ASC FOR UPDATE`, [product.product_id]);
+
+            if (batchesRes.rows.length === 0) throw new Error(`${item.name} için hiç stok yok!`);
+
+            for (const batch of batchesRes.rows) {
+                if (kalanMiktar <= 0) break;
+                const dusulecekMiktar = Math.min(batch.quantity, kalanMiktar);
+
+                await client.query('UPDATE batches SET quantity = quantity - $1 WHERE batch_id = $2', [dusulecekMiktar, batch.batch_id]);
+
+                await client.query(`
+                    INSERT INTO sale_items (sale_id, batch_id, quantity, unit_price, vat_rate)
+                    VALUES ($1, $2, $3, $4, $5)`,
+                    [saleId, batch.batch_id, dusulecekMiktar, product.sale_price, product.vat_rate]
+                );
+                kalanMiktar -= dusulecekMiktar;
+            }
+
+            if (kalanMiktar > 0) throw new Error(`${item.name} için yeterli toplam stok yok! (Eksik: ${kalanMiktar})`);
+
+            // --- STOK KONTROLÜ VE E-POSTA (SPRINT 4) ---
+            const totalStockRes = await client.query('SELECT SUM(quantity) as total FROM batches WHERE product_id = $1', [product.product_id]);
+            const currentTotalStock = totalStockRes.rows[0].total || 0;
+            
+            // Kritik seviyeyi 10 olarak varsayıyoruz (İstenirse veritabanından 'critical_level' eklenebilir)
+            if (currentTotalStock < 10) {
+                const { sendLowStockEmail } = require('../utils/mailer');
+                // Satişi bloklamamak için await KULLANMADAN asenkron gönderiyoruz
+                const reorderQty = product.reorder_qty || 50; // Eğer girilmemişse varsayılan 50 adet sipariş et
+                sendLowStockEmail(product.name, reorderQty).catch(e => console.log(e));
+            }
+
+            await client.query(`
+                INSERT INTO audit_logs (user_id, action_type, table_affected, new_value)
+                VALUES ($1, $2, $3, $4)`,
+                [req.user.id, 'SATIŞ_ONAY', 'batches', JSON.stringify({ barcode: item.barcode, total_sold: item.qty })]
+            );
+        }
+
+        await client.query(
+            'UPDATE sales SET total_amount = $1, vat_amount = $2 WHERE sale_id = $3',
+            [saleTotalAmount, saleVatAmount, saleId]
+        );
+
+        let earnedPoints = 0;
+        if (customer_id) {
+            earnedPoints = Math.floor(saleTotalAmount);
+            const pointDiff = earnedPoints - ptsUsed;
+            await client.query(
+                'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE customer_id = $2',
+                [pointDiff, customer_id]
+            );
+        }
+
+        await client.query('COMMIT');
+        res.json({
+            status: "success",
+            message: "Tüm sepet başarıyla satıldı.",
+            sale_receipt: {
+                sale_id: saleId,
+                total_amount: saleTotalAmount,
+                vat_amount: saleVatAmount,
+                points_earned: earnedPoints
+            }
+        });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ status: "error", message: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// İADE MODÜLÜ (TAM İADE)
+router.post('/refund', authenticateToken, async (req, res) => {
+    const { sale_id } = req.body;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+        
+        const saleRes = await client.query('SELECT * FROM sales WHERE sale_id = $1', [sale_id]);
+        if (saleRes.rows.length === 0) throw new Error("Fatura bulunamadı.");
+        const sale = saleRes.rows[0];
+        
+        if (sale.total_amount <= 0) throw new Error("Bu fatura zaten iade edilmiş veya geçersiz tutar.");
+
+        const itemsRes = await client.query('SELECT * FROM sale_items WHERE sale_id = $1', [sale_id]);
+        
+        for (const item of itemsRes.rows) {
+            await client.query('UPDATE batches SET quantity = quantity + $1 WHERE batch_id = $2', [item.quantity, item.batch_id]);
+            await client.query(
+                'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
+                [req.user.id, 'IADE_ISLEMI', 'batches', JSON.stringify({ batch_id: item.batch_id, qty_returned: item.quantity })]
+            );
+        }
+
+        if (sale.customer_id) {
+            const earned = Math.floor(sale.total_amount);
+            const diff = sale.points_used - earned; 
+            await client.query('UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE customer_id = $2', [diff, sale.customer_id]);
+        }
+
+        // Negatif insert yapamıyoruz çünkü sale_items tablosunda (quantity > 0) CHECK kısıtlaması var.
+        // Bu yüzden "Tam İade" işleminde faturayı ve kalemlerini siliyoruz (Soft delete yerine Hard Delete yapıyoruz).
+        // Ancak bu işlemin tüm detayları audit_logs tablosuna işlendiği için yönetici bunu görebilecek.
+        await client.query('DELETE FROM sale_items WHERE sale_id = $1', [sale_id]);
+        await client.query('DELETE FROM sales WHERE sale_id = $1', [sale_id]);
+
+        await client.query('COMMIT');
+        res.json({ status: "success", message: "İade başarıyla tamamlandı. Fatura iptal edildi.", refund_sale_id: sale_id });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ status: "error", message: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+module.exports = router;
