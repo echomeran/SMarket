@@ -26,12 +26,33 @@ router.post('/', authenticateToken, async (req, res) => {
             );
         }
 
+        await client.query(
+            'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'STOK_EKLEME', 'batches', JSON.stringify({ barcode, quantity, cost_price, new_sale_price })]
+        );
+
         await client.query('COMMIT');
         res.json({ status: "success", message: "Stok eklendi ve fiyat güncellendi." });
     } catch (err) {
         await client.query('ROLLBACK');
         res.status(500).json({ status: "error", message: err.message });
     } finally { client.release(); }
+});
+
+router.get('/product/:barcode', authenticateToken, async (req, res) => {
+    try {
+        const query = `
+            SELECT b.batch_id, b.quantity, b.cost_price, b.arrival_date, b.expiry_date
+            FROM batches b
+            JOIN products p ON b.product_id = p.product_id
+            WHERE p.barcode = $1 AND b.quantity > 0
+            ORDER BY b.arrival_date ASC
+        `;
+        const result = await db.query(query, [req.params.barcode]);
+        res.json({ status: "success", data: result.rows });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
 });
 
 module.exports = router;

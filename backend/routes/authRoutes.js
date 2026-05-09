@@ -13,6 +13,12 @@ router.post('/login', async (req, res) => {
         if (result.rows.length === 0) return res.status(401).json({ message: "Kullanıcı yok." });
 
         const user = result.rows[0];
+        
+        // --- SPRINT 4.5: AKTİF/PASİF KONTROLÜ ---
+        if (user.is_active === false) {
+            return res.status(401).json({ status: "error", message: "Hesabınız pasife alınmıştır. Lütfen yönetici ile iletişime geçin." });
+        }
+
         const match = await bcrypt.compare(password, user.password_hash);
 
         if (!match) {

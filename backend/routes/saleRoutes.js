@@ -59,8 +59,9 @@ router.post('/', authenticateToken, async (req, res) => {
             const totalStockRes = await client.query('SELECT SUM(quantity) as total FROM batches WHERE product_id = $1', [product.product_id]);
             const currentTotalStock = totalStockRes.rows[0].total || 0;
             
-            // Kritik seviyeyi 10 olarak varsayıyoruz (İstenirse veritabanından 'critical_level' eklenebilir)
-            if (currentTotalStock < 10) {
+            // Kritik seviyeyi veritabanından okuyoruz (varsayılan 10)
+            const criticalLevel = product.critical_level || 10;
+            if (currentTotalStock < criticalLevel) {
                 const { sendLowStockEmail } = require('../utils/mailer');
                 // Satişi bloklamamak için await KULLANMADAN asenkron gönderiyoruz
                 const reorderQty = product.reorder_qty || 50; // Eğer girilmemişse varsayılan 50 adet sipariş et
@@ -81,7 +82,8 @@ router.post('/', authenticateToken, async (req, res) => {
 
         let earnedPoints = 0;
         if (customer_id) {
-            earnedPoints = Math.floor(saleTotalAmount);
+            const cashPaid = saleTotalAmount - (ptsUsed / 100);
+            earnedPoints = Math.floor(Math.max(0, cashPaid));
             const pointDiff = earnedPoints - ptsUsed;
             await client.query(
                 'UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE customer_id = $2',
@@ -134,7 +136,8 @@ router.post('/refund', authenticateToken, async (req, res) => {
         }
 
         if (sale.customer_id) {
-            const earned = Math.floor(sale.total_amount);
+            const cashPaid = sale.total_amount - (sale.points_used / 100);
+            const earned = Math.floor(Math.max(0, cashPaid));
             const diff = sale.points_used - earned; 
             await client.query('UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE customer_id = $2', [diff, sale.customer_id]);
         }

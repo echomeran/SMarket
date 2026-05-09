@@ -6,7 +6,6 @@ export default function Cashier() {
   const [customers, setCustomers] = useState([]);
   const [cart, setCart] = useState([]);
   const [searchTerm, setSearchTerm] = useState("");
-  const [barcodeInput, setBarcodeInput] = useState("");
   const [selectedCustomer, setSelectedCustomer] = useState("");
   const [usePoints, setUsePoints] = useState(false);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
@@ -47,10 +46,10 @@ export default function Cashier() {
 
   const handleScan = (e) => {
     e.preventDefault();
-    const found = products.find(p => p.barcode === barcodeInput);
+    const found = products.find(p => p.barcode === searchTerm || p.name.toLowerCase() === searchTerm.toLowerCase());
     if (found) {
       addToCart(found);
-      setBarcodeInput("");
+      setSearchTerm("");
     } else {
       toast.error("Ürün bulunamadı!");
     }
@@ -128,23 +127,18 @@ export default function Cashier() {
         <div style={{ display: 'flex', gap: '10px' }}>
           <form onSubmit={handleScan} style={{ flex: 1 }}>
             <input
-              placeholder="Barkod Okut veya Yaz..."
-              value={barcodeInput}
-              onChange={(e) => setBarcodeInput(e.target.value)}
+              placeholder="Barkod Okut veya Ürün Adı Yaz (Enter ile Ekle)..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
               style={{ width: '100%', padding: '15px', borderRadius: '8px', border: '2px solid #3b82f6', fontSize: '18px' }}
               autoFocus
             />
           </form>
-          <input
-            placeholder="İsimle Ürün Ara..."
-            onChange={(e) => setSearchTerm(e.target.value)}
-            style={{ width: '200px', padding: '15px', borderRadius: '8px', border: '1px solid #ccc' }}
-          />
         </div>
 
         {/* ÜRÜN KARTLARI (Grid) */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '15px', overflowY: 'auto' }}>
-          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
+          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) || p.barcode.includes(searchTerm)).map(p => (
             <div
               key={p.barcode}
               onClick={() => addToCart(p)}

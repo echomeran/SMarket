@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import toast from 'react-hot-toast';
+import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 export default function Manager() {
   const [products, setProducts] = useState([]);
@@ -8,9 +9,11 @@ export default function Manager() {
   // MODAL VE FORM STATE'LERİ
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
   const [selectedBarcode, setSelectedBarcode] = useState("");
+  const [campaignDiscount, setCampaignDiscount] = useState("");
   const [formData, setFormData] = useState({
-    name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "", vat_rate: ""
+    name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "", vat_rate: "", cost_price: "", critical_level: 10, reorder_qty: 50
   });
 
   const fetchProducts = async () => {
@@ -52,6 +55,7 @@ export default function Manager() {
         setIsProductModalOpen(false);
         setFormData({}); // Formu boşalt
         fetchProducts();
+        fetchLogs();
       } else {
         toast.error("Hata: " + resData.message);
       }
@@ -60,14 +64,21 @@ export default function Manager() {
 
   const [cashiers, setCashiers] = useState([]);
   const [reports, setReports] = useState([]);
+  const [weeklyReports, setWeeklyReports] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [selectedBatches, setSelectedBatches] = useState([]);
 
   const fetchReports = async () => {
     const token = localStorage.getItem('token');
     const res = await fetch('http://localhost:5000/api/reports/profit', { headers: { 'Authorization': `Bearer ${token}` } });
     const result = await res.json();
     if (result.status === "success") setReports(result.data);
+
+    const resMonthly = await fetch('http://localhost:5000/api/reports/weekly', { headers: { 'Authorization': `Bearer ${token}` } });
+    const resultMonthly = await resMonthly.json();
+    if (resultMonthly.status === "success") setWeeklyReports(resultMonthly.data);
   };
 
   const fetchCustomers = async () => {
@@ -133,12 +144,27 @@ export default function Manager() {
         setIsStockModalOpen(false);
         setFormData({ name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "" }); // Formu sıfırla
         fetchProducts();
+        fetchLogs(); // Logları anında güncelle
       } else {
         toast.error("Hata: " + resData.message);
       }
     } catch (err) {
       toast.error("Sunucuya bağlanılamadı!");
     }
+  };
+
+  const fetchBatches = async (barcode) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/batches/product/${barcode}`, { headers: { 'Authorization': `Bearer ${token}` } });
+      const data = await res.json();
+      if (res.ok) {
+        setSelectedBatches(data.data);
+        setIsBatchModalOpen(true);
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err) { toast.error("Partiler yüklenemedi."); }
   };
 
 
@@ -149,19 +175,29 @@ export default function Manager() {
         method: 'PUT',
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      if (res.ok) fetchProducts();
+      if (res.ok) {
+        fetchProducts();
+        fetchLogs();
+      }
     } catch (err) {
       toast.error("Hata oluştu.");
     }
   };
 
-  const handleCampaign = async (barcode) => {
-    const discount = prompt("Yüzde kaç indirim uygulamak istersiniz? (Örn: 20)");
+  const openCampaignModal = (barcode) => {
+    setSelectedBarcode(barcode);
+    setCampaignDiscount("");
+    setIsCampaignModalOpen(true);
+  };
+
+  const handleCampaignSubmit = async (e) => {
+    e.preventDefault();
+    const discount = campaignDiscount;
     if (!discount || isNaN(discount) || discount <= 0 || discount > 100) return toast.error("Geçerli bir indirim yüzdesi girin (1-100 arası).");
-    
+
     const token = localStorage.getItem('token');
     try {
-      const res = await fetch(`http://localhost:5000/api/products/${barcode}/campaign`, {
+      const res = await fetch(`http://localhost:5000/api/products/${selectedBarcode}/campaign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify({ discount_percent: parseFloat(discount) })
@@ -169,11 +205,31 @@ export default function Manager() {
       const data = await res.json();
       if (res.ok) {
         toast.success(data.message);
+        setIsCampaignModalOpen(false);
         fetchProducts();
+        fetchLogs();
       } else {
         toast.error(data.message);
       }
-    } catch(err) { toast.error("Bağlantı hatası"); }
+    } catch (err) { toast.error("Bağlantı hatası"); }
+  };
+
+  const toggleCashierStatus = async (userId) => {
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/users/${userId}/toggle`, {
+        method: 'PUT',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        fetchCashiers();
+        fetchLogs(); // Logları anında güncelle
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err) { toast.error("Hata oluştu."); }
   };
 
   const getRowStyle = (status, isActive) => {
@@ -210,7 +266,7 @@ export default function Manager() {
           {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
             <tr key={p.barcode} style={{ borderBottom: '1px solid #eee', ...getRowStyle(p.status, p.is_active !== false) }}>
               <td style={{ padding: '15px' }}>
-                {p.name} 
+                {p.name}
                 {p.is_active === false && <span style={{ marginLeft: '10px', fontSize: '12px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>Pasif</span>}
               </td>
               <td style={{ padding: '15px' }}>
@@ -219,7 +275,7 @@ export default function Manager() {
               </td>
               <td style={{ padding: '15px' }}>{p.quantity}</td>
               <td style={{ padding: '15px', textAlign: 'center' }}>
-                <button 
+                <button
                   onClick={() => toggleProductStatus(p.barcode)}
                   style={{ backgroundColor: p.is_active === false ? '#10b981' : '#ef4444', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
                 >
@@ -228,8 +284,9 @@ export default function Manager() {
               </td>
               <td style={{ padding: '15px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
                 <button onClick={() => { setSelectedBarcode(p.barcode); setIsStockModalOpen(true); }} style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>Stok Ekle</button>
-                {p.status === 'warning' && !p.old_price && (
-                  <button onClick={() => handleCampaign(p.barcode)} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🎁 Kampanya</button>
+                <button onClick={() => fetchBatches(p.barcode)} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>📦 Partiler</button>
+                {!p.old_price && (
+                  <button onClick={() => openCampaignModal(p.barcode)} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🎁 Kampanya</button>
                 )}
               </td>
             </tr>
@@ -238,24 +295,35 @@ export default function Manager() {
       </table>
 
       <div style={{ marginTop: '40px' }}>
-        <h3>👥 Personel Yönetimi (Kasiyerler)</h3>
+        <h3>Personel Yönetimi</h3>
         <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: '#f3f4f6' }}>
             <tr>
               <th style={{ padding: '12px', textAlign: 'left' }}>Tam Adı</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Kullanıcı Adı</th>
               <th style={{ padding: '12px', textAlign: 'left' }}>Maaş</th>
+              <th style={{ padding: '12px', textAlign: 'left' }}>Vardiya</th>
               <th style={{ padding: '12px', textAlign: 'center' }}>Durum</th>
+              <th style={{ padding: '12px', textAlign: 'center' }}>İşlemler</th>
             </tr>
           </thead>
           <tbody>
             {cashiers.map(c => (
-              <tr key={c.user_id} style={{ borderBottom: '1px solid #eee' }}>
+              <tr key={c.user_id} style={{ borderBottom: '1px solid #eee', backgroundColor: c.is_active ? 'white' : '#f3f4f6', opacity: c.is_active ? 1 : 0.7 }}>
                 <td style={{ padding: '12px' }}>{c.full_name}</td>
                 <td style={{ padding: '12px' }}>{c.username}</td>
                 <td style={{ padding: '12px' }}>{c.salary} ₺</td>
+                <td style={{ padding: '12px' }}><span style={{ backgroundColor: '#e0e7ff', color: '#4f46e5', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>{c.shift || '08:00 - 16:00'}</span></td>
                 <td style={{ padding: '12px', textAlign: 'center' }}>
                   {c.is_active ? '🟢 Aktif' : '🔴 Pasif'}
+                </td>
+                <td style={{ padding: '12px', textAlign: 'center' }}>
+                  <button
+                    onClick={() => toggleCashierStatus(c.user_id)}
+                    style={{ backgroundColor: c.is_active ? '#ef4444' : '#10b981', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
+                  >
+                    {c.is_active ? 'Pasife Al' : 'Aktifleştir'}
+                  </button>
                 </td>
               </tr>
             ))}
@@ -264,7 +332,7 @@ export default function Manager() {
       </div>
 
       <div style={{ marginTop: '40px' }}>
-        <h3>🕵️ Geçmiş İşlemler (Audit Logs)</h3>
+        <h3>Geçmiş İşlemler</h3>
         <div style={{ maxHeight: '400px', overflowY: 'auto', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead style={{ backgroundColor: '#f8fafc', position: 'sticky', top: 0 }}>
@@ -281,7 +349,7 @@ export default function Manager() {
                   <td style={{ padding: '12px', fontSize: '13px' }}>{new Date(log.timestamp).toLocaleString('tr-TR')}</td>
                   <td style={{ padding: '12px', fontSize: '13px', fontWeight: 'bold' }}>{log.full_name || log.username}</td>
                   <td style={{ padding: '12px', fontSize: '13px' }}>
-                    <span style={{ 
+                    <span style={{
                       padding: '4px 8px', borderRadius: '4px', fontSize: '12px',
                       backgroundColor: log.action_type === 'IADE_ISLEMI' ? '#fee2e2' : '#dcfce7',
                       color: log.action_type === 'IADE_ISLEMI' ? '#ef4444' : '#16a34a'
@@ -315,12 +383,12 @@ export default function Manager() {
               <input placeholder="Ürün Adı" required onChange={e => setFormData({ ...formData, name: e.target.value })} style={{ padding: '10px' }} />
               <input placeholder="Barkod" required onChange={e => setFormData({ ...formData, barcode: e.target.value })} style={{ padding: '10px' }} />
               <select required onChange={e => {
-                  const val = e.target.value;
-                  let vr = 20;
-                  if(val === "Temel Gıda") vr = 1;
-                  else if(val === "Temizlik & Kozmetik") vr = 10;
-                  setFormData({ ...formData, category: val, vat_rate: vr });
-                }} style={{ padding: '10px' }}>
+                const val = e.target.value;
+                let vr = 20;
+                if (val === "Temel Gıda") vr = 1;
+                else if (val === "Temizlik & Kozmetik") vr = 10;
+                setFormData({ ...formData, category: val, vat_rate: vr });
+              }} style={{ padding: '10px' }}>
                 <option value="">-- Kategori ve KDV Sınıfı Seç --</option>
                 <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
                 <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
@@ -329,10 +397,18 @@ export default function Manager() {
 
               <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
                 <label style={{ fontSize: '12px', color: '#666' }}>Fiyat ve Stok Bilgileri:</label>
-                <input type="number" step="0.01" placeholder="Müşteriye Satış Fiyatı (₺)" required onChange={e => setFormData({ ...formData, price: e.target.value })} style={{ padding: '10px', marginTop: '5px' }} />
-                <input type="number" step="0.01" placeholder="Bize Geliş Fiyatı / Maliyet (₺)" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} style={{ padding: '10px', marginTop: '5px' }} />
-                <input type="number" placeholder="Başlangıç Stoğu (Adet)" required onChange={e => setFormData({ ...formData, stock: e.target.value })} style={{ padding: '10px', marginTop: '5px' }} />
-                <input type="date" required onChange={e => setFormData({ ...formData, expiryDate: e.target.value })} style={{ padding: '10px', marginTop: '5px' }} />
+                <input type="number" step="0.01" placeholder="Satış Fiyatı (₺)" required onChange={e => setFormData({ ...formData, price: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
+                <input type="number" step="0.01" placeholder="Maliyet (₺)" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
+                <input type="number" placeholder="Başlangıç Stoğu (Adet)" required onChange={e => setFormData({ ...formData, stock: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
+                <input type="date" required onChange={e => setFormData({ ...formData, expiryDate: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
+              </div>
+
+              <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
+                <label style={{ fontSize: '12px', color: '#666' }}>Otomatik Sipariş Ayarları:</label>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                  <input type="number" placeholder="Kritik Uyarı Seviyesi (Örn: 10)" required value={formData.critical_level} onChange={e => setFormData({ ...formData, critical_level: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+                  <input type="number" placeholder="Otomatik Sipariş Miktarı (Örn: 50)" required value={formData.reorder_qty} onChange={e => setFormData({ ...formData, reorder_qty: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+                </div>
               </div>
 
               <button type="submit" style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>
@@ -373,10 +449,69 @@ export default function Manager() {
         </div>
       )}
 
+      {/* KAMPANYA MODAL */}
+      {isCampaignModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>🎁 İndirim Uygula</h3>
+              <button onClick={() => setIsCampaignModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+            </div>
+            <div style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>Barkod: {selectedBarcode}</div>
+            <form onSubmit={handleCampaignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ fontSize: '12px' }}>Yüzde kaç indirim uygulamak istersiniz? (Örn: 20)</label>
+              <input type="number" placeholder="İndirim %" required value={campaignDiscount} onChange={e => setCampaignDiscount(e.target.value)} style={{ padding: '10px' }} />
+              <button type="submit" style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Kampanyayı Başlat</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* HAFTALIK FİNANSAL GRAFİK (Sprint 5) */}
+      <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
+        <h3>Finans Tablosu</h3>
+        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
+          * Gider tablosuna Ürün Maliyetleri, KDV ve aktif kasiyerlerin Haftalık Maaşları (Total) dahildir.
+        </p>
+        <div style={{ width: '100%', height: 400 }}>
+          <ResponsiveContainer>
+            <ComposedChart data={weeklyReports} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
+              <CartesianGrid stroke="#f5f5f5" strokeDasharray="3 3" />
+              <XAxis dataKey="week" />
+              <YAxis domain={([dataMin, dataMax]) => {
+                const maxAbs = Math.max(Math.abs(dataMin || 0), Math.abs(dataMax || 0));
+                let limit = maxAbs === 0 ? 10000 : Math.ceil(maxAbs * 1.2);
+                limit = Math.ceil(limit / 100) * 100; // 100'ün katına yuvarla
+                return [-limit, limit];
+              }} />
+              <Tooltip
+                content={({ active, payload, label }) => {
+                  if (active && payload && payload.length) {
+                    const data = payload[0].payload;
+                    return (
+                      <div style={{ backgroundColor: 'white', padding: '15px', border: '1px solid #ccc', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                        <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', fontSize: '14px' }}>{label}</p>
+                        <p style={{ margin: '5px 0', color: '#10b981', fontSize: '13px' }}>Brüt Ciro (Gelir): {data.revenue.toLocaleString('tr-TR')} ₺</p>
+                        <p style={{ margin: '5px 0', color: '#ef4444', fontSize: '13px' }}>Toplam Giderler: {data.expenses.toLocaleString('tr-TR')} ₺</p>
+                        <div style={{ borderTop: '1px solid #eee', margin: '10px 0' }}></div>
+                        <p style={{ margin: '0', color: '#3b82f6', fontWeight: 'bold', fontSize: '14px' }}>Gerçek Net Kâr: {data.net_profit.toLocaleString('tr-TR')} ₺</p>
+                      </div>
+                    );
+                  }
+                  return null;
+                }}
+              />
+              <Legend />
+              <Line type="monotone" dataKey="net_profit" stroke="#3b82f6" strokeWidth={3} name="Gerçek Net Kâr" activeDot={{ r: 8 }} />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
       <div style={{ display: 'flex', gap: '20px', marginTop: '40px' }}>
         {/* KÂR RAPORLARI */}
         <div style={{ flex: 1 }}>
-          <h3>📈 Finansal Raporlar (Günlük Kâr/Zarar)</h3>
+          <h3>Finansal Raporlar</h3>
           <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
             <thead style={{ backgroundColor: '#f3f4f6' }}>
               <tr>
@@ -410,13 +545,13 @@ export default function Manager() {
 
         {/* MÜŞTERİLER VE PUANLAR */}
         <div style={{ flex: 1 }}>
-          <h3>🎁 Müşteri Sadakat Programı</h3>
+          <h3>Müşteriler</h3>
           <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
             <thead style={{ backgroundColor: '#f3f4f6' }}>
               <tr>
                 <th style={{ padding: '12px', textAlign: 'left' }}>Müşteri Adı</th>
                 <th style={{ padding: '12px', textAlign: 'left' }}>Telefon</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>Sadakat Puanı</th>
+                <th style={{ padding: '12px', textAlign: 'right' }}>Puan</th>
               </tr>
             </thead>
             <tbody>
@@ -436,6 +571,46 @@ export default function Manager() {
           </table>
         </div>
       </div>
+
+      {isBatchModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '500px', maxHeight: '80vh', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+              <h2 style={{ margin: 0, color: '#1e293b' }}>📦 Parti Bilgileri (Batches)</h2>
+              <button onClick={() => setIsBatchModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+            </div>
+
+            {selectedBatches.length > 0 ? (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
+                <thead style={{ backgroundColor: '#f8fafc' }}>
+                  <tr>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Parti No</th>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Miktar</th>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Maliyet</th>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Geliş T.</th>
+                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>SKT</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {selectedBatches.map(b => (
+                    <tr key={b.batch_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                      <td style={{ padding: '10px' }}>#{b.batch_id}</td>
+                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{b.quantity}</td>
+                      <td style={{ padding: '10px' }}>{b.cost_price} ₺</td>
+                      <td style={{ padding: '10px' }}>{new Date(b.arrival_date).toLocaleDateString('tr-TR')}</td>
+                      <td style={{ padding: '10px', color: new Date(b.expiry_date) < new Date(new Date().setDate(new Date().getDate() + 7)) ? '#ef4444' : 'inherit' }}>
+                        {new Date(b.expiry_date).toLocaleDateString('tr-TR')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            ) : (
+              <p style={{ textAlign: 'center', color: '#64748b' }}>Bu ürüne ait aktif stok (parti) bulunmuyor.</p>
+            )}
+          </div>
+        </div>
+      )}
 
     </div>
   );

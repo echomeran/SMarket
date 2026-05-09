@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import toast from 'react-hot-toast';
 
 export default function Login() {
   const [username, setUsername] = useState(""); // Değişken ismi 'username' olarak güncellendi
@@ -35,11 +36,11 @@ export default function Login() {
         }
       } else {
         // Giriş başarısız: Kullanıcıya hata mesajı gösterilir
-        alert(data.message || "Giriş bilgileri hatalı!");
+        toast.error(data.message || "Giriş bilgileri hatalı!");
       }
     } catch (err) {
       console.error("Login hatası:", err);
-      alert("Sunucuya bağlanılamadı. Lütfen backend'in açık olduğunu kontrol edin.");
+      toast.error("Sunucuya bağlanılamadı. Lütfen backend'in açık olduğunu kontrol edin.");
     }
   };
 

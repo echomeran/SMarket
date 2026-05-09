@@ -4,6 +4,7 @@
   "description": "",
   "main": "index.js",
   "scripts": {
+    "start": "concurrently \"cd backend && nodemon index.js\" \"cd frontend && npm run dev\"",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -17,5 +18,8 @@
     "nodemailer": "^8.0.3",
     "pg": "^8.20.0",
     "ph": "^0.1.10"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }
