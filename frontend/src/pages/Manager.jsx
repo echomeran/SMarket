@@ -10,11 +10,32 @@ export default function Manager() {
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
+  const [isEditEmployeeModalOpen, setIsEditEmployeeModalOpen] = useState(false);
   const [selectedBarcode, setSelectedBarcode] = useState("");
+  const [selectedEmployeeId, setSelectedEmployeeId] = useState("");
   const [campaignDiscount, setCampaignDiscount] = useState("");
   const [formData, setFormData] = useState({
     name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "", vat_rate: "", cost_price: "", critical_level: 10, reorder_qty: 50
   });
+  const [employeeFormData, setEmployeeFormData] = useState({
+    full_name: "", username: "", password: "", role: "cashier", salary: "", shift: ""
+  });
+  const [editEmployeeData, setEditEmployeeData] = useState({
+    full_name: "", username: "", salary: "", shift: ""
+  });
+  const [editProductData, setEditProductData] = useState({
+    name: "", category: "", vat_rate: "", critical_level: 10, reorder_qty: 50
+  });
+
+  const handleShiftFormat = (val) => {
+    let raw = val.replace(/[^0-9]/g, '');
+    if (raw.length > 8) raw = raw.slice(0, 8);
+    if (raw.length >= 5) return `${raw.slice(0, 2)}:${raw.slice(2, 4)} - ${raw.slice(4, 6)}:${raw.slice(6, 8)}`;
+    if (raw.length >= 3) return `${raw.slice(0, 2)}:${raw.slice(2, 4)}`;
+    return raw;
+  };
 
   const fetchProducts = async () => {
     try {
@@ -110,6 +131,28 @@ export default function Manager() {
     fetchReports();
     fetchCustomers();
     fetchLogs();
+
+    // Otomatik İmha İşlemi (Sessizce Arka Planda Çalışır)
+    const autoDispose = async () => {
+      const token = localStorage.getItem('token');
+      try {
+        const res = await fetch('http://localhost:5000/api/products/waste-expired', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        const data = await res.json();
+        if (res.ok && data.message && data.message.includes("imha edildi")) {
+          // Eğer çöpe giden ürün varsa anlık olarak tabloyu yenile ve bildirim ver
+          toast.error("Bazı tarihi geçmiş ürünler sistem tarafından otomatik olarak imha edilip zarar olarak işlendi.", { icon: '⚠️' });
+          fetchProducts();
+          fetchReports();
+          fetchLogs();
+        }
+      } catch (err) {
+        // Hata durumunda kullanıcıyı rahatsız etmeden yut (arka plan işlemi)
+      }
+    };
+    autoDispose();
   }, []);
 
   // UI Kısmı (Tablonun altına ekle)
@@ -214,6 +257,75 @@ export default function Manager() {
     } catch (err) { toast.error("Bağlantı hatası"); }
   };
 
+  const handleEditProductSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/products/${selectedBarcode}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(editProductData)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setIsEditProductModalOpen(false);
+        fetchProducts();
+        fetchLogs();
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err) {
+      toast.error("Bağlantı hatası");
+    }
+  };
+
+  const handleAddEmployee = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch('http://localhost:5000/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(employeeFormData)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setIsEmployeeModalOpen(false);
+        setEmployeeFormData({ full_name: "", username: "", password: "", role: "cashier", salary: "", shift: "" });
+        fetchCashiers();
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err) {
+      toast.error("Personel eklenemedi, bağlantı hatası.");
+    }
+  };
+
+  const handleEditEmployeeSubmit = async (e) => {
+    e.preventDefault();
+    const token = localStorage.getItem('token');
+    try {
+      const res = await fetch(`http://localhost:5000/api/users/${selectedEmployeeId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(editEmployeeData)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        toast.success(data.message);
+        setIsEditEmployeeModalOpen(false);
+        fetchCashiers();
+        fetchReports(); // Maaş güncellenirse maliyet güncellenebilir
+      } else {
+        toast.error(data.message);
+      }
+    } catch (err) {
+      toast.error("Personel düzenlenemedi, bağlantı hatası.");
+    }
+  };
+
   const toggleCashierStatus = async (userId) => {
     const token = localStorage.getItem('token');
     try {
@@ -282,9 +394,20 @@ export default function Manager() {
                   {p.is_active === false ? 'Aktifleştir' : 'Pasife Al'}
                 </button>
               </td>
-              <td style={{ padding: '15px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                <button onClick={() => { setSelectedBarcode(p.barcode); setIsStockModalOpen(true); }} style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>Stok Ekle</button>
-                <button onClick={() => fetchBatches(p.barcode)} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>📦 Partiler</button>
+              <td style={{ padding: '15px', textAlign: 'center' }}>
+                <button onClick={() => {
+                  setSelectedBarcode(p.barcode);
+                  setEditProductData({ 
+                    name: p.name, 
+                    category: p.category || "Temel Gıda", 
+                    vat_rate: p.vat_rate || 1, 
+                    critical_level: p.critical_level || 10, 
+                    reorder_qty: p.reorder_qty || 50 
+                  });
+                  setIsEditProductModalOpen(true);
+                }} style={{ backgroundColor: '#64748b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>✏️ Düzenle</button>
+                <button onClick={() => { setSelectedBarcode(p.barcode); setIsStockModalOpen(true); }} style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>Stok Ekle</button>
+                <button onClick={() => fetchBatches(p.barcode)} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', marginRight: '5px' }}>📦 Partiler</button>
                 {!p.old_price && (
                   <button onClick={() => openCampaignModal(p.barcode)} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🎁 Kampanya</button>
                 )}
@@ -295,7 +418,12 @@ export default function Manager() {
       </table>
 
       <div style={{ marginTop: '40px' }}>
-        <h3>Personel Yönetimi</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+          <h3>Personel Yönetimi</h3>
+          <button onClick={() => setIsEmployeeModalOpen(true)} style={{ backgroundColor: '#10b981', color: 'white', border: 'none', padding: '8px 15px', borderRadius: '5px', cursor: 'pointer', fontWeight: 'bold' }}>
+            Yeni Personel Ekle
+          </button>
+        </div>
         <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
           <thead style={{ backgroundColor: '#f3f4f6' }}>
             <tr>
@@ -318,6 +446,13 @@ export default function Manager() {
                   {c.is_active ? '🟢 Aktif' : '🔴 Pasif'}
                 </td>
                 <td style={{ padding: '12px', textAlign: 'center' }}>
+                  <button onClick={() => {
+                    setSelectedEmployeeId(c.user_id);
+                    setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || "" });
+                    setIsEditEmployeeModalOpen(true);
+                  }} style={{ backgroundColor: '#64748b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', marginRight: '5px' }}>
+                    ✏️ Düzenle
+                  </button>
                   <button
                     onClick={() => toggleCashierStatus(c.user_id)}
                     style={{ backgroundColor: c.is_active ? '#ef4444' : '#10b981', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
@@ -462,6 +597,103 @@ export default function Manager() {
               <label style={{ fontSize: '12px' }}>Yüzde kaç indirim uygulamak istersiniz? (Örn: 20)</label>
               <input type="number" placeholder="İndirim %" required value={campaignDiscount} onChange={e => setCampaignDiscount(e.target.value)} style={{ padding: '10px' }} />
               <button type="submit" style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Kampanyayı Başlat</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* YENİ PERSONEL MODAL */}
+      {isEmployeeModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>Yeni Personel Ekle</h3>
+              <button onClick={() => setIsEmployeeModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+            </div>
+            <form onSubmit={handleAddEmployee} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <input placeholder="Ad Soyad" required value={employeeFormData.full_name} onChange={e => setEmployeeFormData({ ...employeeFormData, full_name: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+              <input placeholder="Kullanıcı Adı" required value={employeeFormData.username} onChange={e => setEmployeeFormData({ ...employeeFormData, username: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+              <input type="password" placeholder="Şifre" required value={employeeFormData.password} onChange={e => setEmployeeFormData({ ...employeeFormData, password: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <select required value={employeeFormData.role} onChange={e => setEmployeeFormData({ ...employeeFormData, role: e.target.value })} style={{ padding: '10px', width: '50%' }}>
+                  <option value="cashier">Kasiyer</option>
+                  <option value="manager">Yönetici</option>
+                </select>
+                <input type="number" placeholder="Maaş (₺)" required value={employeeFormData.salary} onChange={e => setEmployeeFormData({ ...employeeFormData, salary: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+              </div>
+              <input placeholder="Vardiya (Sayı girin: 08001600)" required value={employeeFormData.shift} onChange={e => setEmployeeFormData({ ...employeeFormData, shift: handleShiftFormat(e.target.value) })} style={{ padding: '10px', width: '100%' }} />
+
+              <button type="submit" style={{ padding: '10px', backgroundColor: '#10b981', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Sisteme Kaydet</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PERSONEL DÜZENLE MODAL */}
+      {isEditEmployeeModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ margin: 0, color: '#1e293b' }}>Personel Düzenle</h3>
+              <button onClick={() => setIsEditEmployeeModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+            </div>
+            <form onSubmit={handleEditEmployeeSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ fontSize: '12px' }}>Ad Soyad:</label>
+              <input placeholder="Ad Soyad" required value={editEmployeeData.full_name} onChange={e => setEditEmployeeData({ ...editEmployeeData, full_name: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+              <label style={{ fontSize: '12px' }}>Kullanıcı Adı:</label>
+              <input placeholder="Kullanıcı Adı" required value={editEmployeeData.username} onChange={e => setEditEmployeeData({ ...editEmployeeData, username: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+              
+              <div style={{ display: 'flex', gap: '10px' }}>
+                <div style={{ width: '50%' }}>
+                  <label style={{ fontSize: '12px' }}>Maaş (₺):</label>
+                  <input type="number" required value={editEmployeeData.salary} onChange={e => setEditEmployeeData({ ...editEmployeeData, salary: e.target.value })} style={{ padding: '10px', width: '100%' }} />
+                </div>
+                <div style={{ width: '50%' }}>
+                  <label style={{ fontSize: '12px' }}>Vardiya (08001600):</label>
+                  <input placeholder="08:00 - 16:00" required value={editEmployeeData.shift} onChange={e => setEditEmployeeData({ ...editEmployeeData, shift: handleShiftFormat(e.target.value) })} style={{ padding: '10px', width: '100%' }} />
+                </div>
+              </div>
+              <button type="submit" style={{ padding: '10px', backgroundColor: '#64748b', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Değişiklikleri Kaydet</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ÜRÜN DÜZENLE MODAL */}
+      {isEditProductModalOpen && (
+        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
+          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
+              <h3 style={{ margin: 0 }}>Ürün Düzenle</h3>
+              <button onClick={() => setIsEditProductModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✖</button>
+            </div>
+            <form onSubmit={handleEditProductSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ fontSize: '12px' }}>Ürün Adı:</label>
+              <input placeholder="Ürün Adı" required value={editProductData.name} onChange={e => setEditProductData({ ...editProductData, name: e.target.value })} style={{ padding: '10px' }} />
+              
+              <label style={{ fontSize: '12px' }}>Kategori:</label>
+              <select required value={editProductData.category} onChange={e => {
+                const val = e.target.value;
+                let vr = 20;
+                if (val === "Temel Gıda") vr = 1;
+                else if (val === "Temizlik & Kozmetik") vr = 10;
+                setEditProductData({ ...editProductData, category: val, vat_rate: vr });
+              }} style={{ padding: '10px' }}>
+                <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
+                <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
+                <option value="Diğer / Teknoloji">Diğer / Teknoloji (%20 KDV)</option>
+              </select>
+
+              <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
+                <label style={{ fontSize: '12px', color: '#666' }}>Otomatik Sipariş Ayarları:</label>
+                <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
+                  <input type="number" placeholder="Kritik Uyarı Seviyesi" required value={editProductData.critical_level} onChange={e => setEditProductData({ ...editProductData, critical_level: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+                  <input type="number" placeholder="Otomatik Sipariş Miktarı" required value={editProductData.reorder_qty} onChange={e => setEditProductData({ ...editProductData, reorder_qty: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+                </div>
+              </div>
+
+              <button type="submit" style={{ padding: '10px', backgroundColor: '#64748b', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer', marginTop: '10px' }}>Değişiklikleri Kaydet</button>
             </form>
           </div>
         </div>

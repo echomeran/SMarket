@@ -32,4 +32,21 @@ router.put('/:id/toggle', authenticateToken, async (req, res) => {
     }
 });
 
+router.put('/:id', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'manager') return res.status(403).json({ message: "Sadece yöneticiler personel düzenleyebilir." });
+    
+    const userId = req.params.id;
+    const { full_name, username, salary, shift } = req.body;
+    
+    try {
+        await db.query(
+            'UPDATE users SET full_name = $1, username = $2, salary = $3, shift = $4 WHERE user_id = $5',
+            [full_name, username, salary, shift, userId]
+        );
+        res.json({ status: "success", message: "Personel bilgileri güncellendi." });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
+});
+
 module.exports = router;

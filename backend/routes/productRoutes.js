@@ -8,6 +8,7 @@ router.get('/', authenticateToken, async (req, res) => {
         const query = `
             SELECT 
                 p.product_id, p.name, p.barcode, p.sale_price AS price, p.old_price, p.vat_rate, p.is_active,
+                p.category, p.critical_level, p.reorder_qty,
                 COALESCE(SUM(b.quantity), 0) AS quantity,
                 MIN(b.expiry_date) AS expiry_date,
                 CASE 
@@ -17,7 +18,7 @@ router.get('/', authenticateToken, async (req, res) => {
                 END as status
             FROM products p
             LEFT JOIN batches b ON p.product_id = b.product_id
-            GROUP BY p.product_id, p.name, p.barcode, p.sale_price, p.old_price, p.vat_rate, p.is_active
+            GROUP BY p.product_id, p.name, p.barcode, p.sale_price, p.old_price, p.vat_rate, p.is_active, p.category, p.critical_level, p.reorder_qty
             ORDER BY status DESC, expiry_date ASC;
         `;
         const result = await db.query(query);
@@ -103,6 +104,84 @@ router.post('/:id/campaign', authenticateToken, async (req, res) => {
         await client.query('COMMIT');
         res.json({ status: "success", message: "Kampanya başarıyla başlatıldı!" });
     } catch(err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ status: "error", message: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+router.put('/:barcode', authenticateToken, async (req, res) => {
+    const barcode = req.params.barcode;
+    const { name, category, vat_rate, critical_level, reorder_qty } = req.body;
+    
+    if (req.user.role !== 'manager') return res.status(403).json({ message: "Sadece yöneticiler ürün düzenleyebilir." });
+
+    try {
+        await db.query(
+            'UPDATE products SET name = $1, category = $2, vat_rate = $3, critical_level = $4, reorder_qty = $5 WHERE barcode = $6',
+            [name, category, vat_rate || 10, critical_level || 10, reorder_qty || 50, barcode]
+        );
+
+        await db.query(
+            'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'URUN_DUZENLENDI', 'products', JSON.stringify({ barcode, name, category })]
+        );
+
+        res.json({ status: "success", message: "Ürün bilgileri başarıyla güncellendi!" });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
+});
+
+router.post('/waste-expired', authenticateToken, async (req, res) => {
+    if (req.user.role !== 'manager') return res.status(403).json({ message: "Sadece yöneticiler imha işlemi yapabilir." });
+
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        
+        // Find expired batches with stock
+        const expiredRes = await client.query(`
+            SELECT b.batch_id, b.quantity, b.product_id 
+            FROM batches b 
+            WHERE b.expiry_date < CURRENT_DATE AND b.quantity > 0 FOR UPDATE
+        `);
+
+        if (expiredRes.rows.length === 0) {
+            await client.query('ROLLBACK');
+            return res.json({ status: "success", message: "Tarihi geçmiş ürün bulunamadı. Deponuz tertemiz!" });
+        }
+
+        // Create a fake sale for 0 TL to trigger cost logic
+        const saleInsert = await client.query(
+            "INSERT INTO sales (user_id, total_amount, loyalty_points_earned, payment_method) VALUES ($1, $2, $3, $4) RETURNING sale_id",
+            [req.user.id, 0, 0, 'ZAYI']
+        );
+        const saleId = saleInsert.rows[0].sale_id;
+
+        // Add sale_items and zero out batches
+        let totalWasted = 0;
+        for (const batch of expiredRes.rows) {
+            await client.query(
+                "INSERT INTO sale_items (sale_id, batch_id, quantity, unit_price, vat_rate) VALUES ($1, $2, $3, $4, $5)",
+                [saleId, batch.batch_id, batch.quantity, 0, 0]
+            );
+            await client.query(
+                "UPDATE batches SET quantity = 0 WHERE batch_id = $1",
+                [batch.batch_id]
+            );
+            totalWasted += batch.quantity;
+        }
+
+        await client.query(
+            "INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)",
+            [req.user.id, 'ZAYI_IMHA_EDILDI', 'batches', JSON.stringify({ total_wasted_items: totalWasted, sale_id: saleId })]
+        );
+
+        await client.query('COMMIT');
+        res.json({ status: "success", message: `${totalWasted} adet tarihi geçmiş ürün imha edildi ve 'Zarar' olarak kaydedildi.` });
+    } catch (err) {
         await client.query('ROLLBACK');
         res.status(500).json({ status: "error", message: err.message });
     } finally {

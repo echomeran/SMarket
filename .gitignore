@@ -23,3 +23,6 @@ Thumbs.db
 #IDE dosyaları
 .vscode/
 .idea/
+
+# Rapor klasörü (GitHub'a gönderilmez)
+rapor/

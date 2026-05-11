@@ -18,7 +18,7 @@ const sendLowStockEmail = async (productName, reorderQty) => {
 
     const mailOptions = {
         from: `"SMarket Satın Alma Departmanı" <${process.env.EMAIL_USER}>`,
-        to: 'salihakoglu91@gmail.com', // Gerçekte bu "Tedarikçinin E-postası" olmalı, şimdilik test için size geliyor
+        to: 'smarketproje@gmail.com',
         subject: `[SİPARİŞ TALEBİ] SMarket Yeni Ürün Tedariği: ${productName}`,
         html: `
             <div style="font-family: sans-serif; padding: 20px; border: 1px solid #e2e8f0; border-radius: 8px;">
