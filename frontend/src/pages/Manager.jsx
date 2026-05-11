@@ -21,10 +21,24 @@ export default function Manager() {
   const [campaignDiscount, setCampaignDiscount] = useState("");
   const [selectedBatches, setSelectedBatches] = useState([]);
   const [formData, setFormData] = useState({ name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "", vat_rate: "", cost_price: "", critical_level: 10, reorder_qty: 50 });
+  const [employeeFormData, setEmployeeFormData] = useState({ full_name: "", username: "", password: "", role: "cashier", salary: "", shift: "" });
+  const [editProductData, setEditProductData] = useState({ name: "", category: "", vat_rate: "", critical_level: 10, reorder_qty: 50 });
+  const [editEmployeeData, setEditEmployeeData] = useState({ full_name: "", username: "", salary: "", shift: "" });
+  const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
+  const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
+  const [isEditEmployeeModalOpen, setIsEditEmployeeModalOpen] = useState(false);
 
   const token = () => localStorage.getItem('token');
   const headers = () => ({ 'Authorization': `Bearer ${token()}` });
   const jsonHeaders = () => ({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token()}` });
+
+  const handleShiftFormat = (val) => {
+    let raw = val.replace(/[^0-9]/g, '');
+    if (raw.length > 8) raw = raw.slice(0, 8);
+    if (raw.length >= 5) return `${raw.slice(0, 2)}:${raw.slice(2, 4)} - ${raw.slice(4, 6)}:${raw.slice(6, 8)}`;
+    if (raw.length >= 3) return `${raw.slice(0, 2)}:${raw.slice(2, 4)}`;
+    return raw;
+  };
 
   const fetchProducts = async () => {
     const r = await fetch('http://localhost:5000/api/products', { headers: headers() });
@@ -55,7 +69,21 @@ export default function Manager() {
     if (d.status === "success") setLogs(d.data);
   };
 
-  useEffect(() => { fetchProducts(); fetchCashiers(); fetchReports(); fetchCustomers(); fetchLogs(); }, []);
+  useEffect(() => {
+    fetchProducts(); fetchCashiers(); fetchReports(); fetchCustomers(); fetchLogs();
+    // Otomatik imha: Girişte tarihi geçmiş ürünleri sessizce imha et
+    const autoDispose = async () => {
+      try {
+        const res = await fetch('http://localhost:5000/api/products/waste-expired', { method: 'POST', headers: headers() });
+        const data = await res.json();
+        if (res.ok && data.message && data.message.includes('imha edildi')) {
+          toast.error(data.message, { icon: '⚠️' });
+          fetchProducts(); fetchReports(); fetchLogs();
+        }
+      } catch (_) {}
+    };
+    autoDispose();
+  }, []);
 
   const handleAddProduct = async (e) => {
     e.preventDefault();
@@ -93,15 +121,48 @@ export default function Manager() {
     else toast.error("Hata oluştu.");
   };
 
-  const handleAddEmployee = async (e) => {
+  const handleCampaignSubmit = async (e) => {
     e.preventDefault();
-    if (!campaignDiscount || isNaN(campaignDiscount) || campaignDiscount <= 0 || campaignDiscount > 100) return toast.error("1-100 arası değer girin.");
+    if (!campaignDiscount || isNaN(campaignDiscount) || campaignDiscount <= 0 || campaignDiscount > 100) return toast.error("1-100 arısı değer girin.");
     const r = await fetch(`http://localhost:5000/api/products/${selectedBarcode}/campaign`, {
       method: 'POST', headers: jsonHeaders(),
       body: JSON.stringify({ discount_percent: parseFloat(campaignDiscount) })
     });
     const d = await r.json();
     if (r.ok) { toast.success(d.message); setIsCampaignModalOpen(false); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
+  };
+
+  const handleEditProductSubmit = async (e) => {
+    e.preventDefault();
+    const r = await fetch(`http://localhost:5000/api/products/${selectedBarcode}`, {
+      method: 'PUT', headers: jsonHeaders(),
+      body: JSON.stringify(editProductData)
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); setIsEditProductModalOpen(false); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
+  };
+
+  const handleAddEmployee = async (e) => {
+    e.preventDefault();
+    const r = await fetch('http://localhost:5000/api/auth/register', {
+      method: 'POST', headers: jsonHeaders(),
+      body: JSON.stringify(employeeFormData)
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); setIsEmployeeModalOpen(false); setEmployeeFormData({ full_name: '', username: '', password: '', role: 'cashier', salary: '', shift: '' }); fetchCashiers(); }
+    else toast.error(d.message);
+  };
+
+  const handleEditEmployeeSubmit = async (e) => {
+    e.preventDefault();
+    const r = await fetch(`http://localhost:5000/api/users/${selectedEmployeeId}`, {
+      method: 'PUT', headers: jsonHeaders(),
+      body: JSON.stringify(editEmployeeData)
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); setIsEditEmployeeModalOpen(false); fetchCashiers(); fetchReports(); }
     else toast.error(d.message);
   };
 
@@ -228,7 +289,8 @@ export default function Manager() {
                           </button>
                         </td>
                         <td>
-                          <div style={{ display: 'flex', gap: 6 }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                            <button className="btn btn-sm" style={{backgroundColor:'#64748b',color:'white'}} onClick={() => { setSelectedBarcode(p.barcode); setEditProductData({ name: p.name, category: p.category || 'Temel Gıda', vat_rate: p.vat_rate || 1, critical_level: p.critical_level || 10, reorder_qty: p.reorder_qty || 50 }); setIsEditProductModalOpen(true); }}>✏️ Düzenle</button>
                             <button className="btn btn-sm btn-amber" onClick={() => { setSelectedBarcode(p.barcode); setFormData({}); setIsStockModalOpen(true); }}>Stok Ekle</button>
                             <button className="btn btn-sm btn-blue" onClick={() => fetchBatches(p.barcode)}>📦 Partiler</button>
                             {!p.old_price && <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>🎁 Kampanya</button>}
@@ -246,6 +308,9 @@ export default function Manager() {
           {/* STAFF */}
           {tab === "staff" && (
             <div className="section-card">
+              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12 }}>
+                <button className="btn btn-primary" onClick={() => setIsEmployeeModalOpen(true)}>+ Yeni Personel Ekle</button>
+              </div>
               <table className="data-table">
                 <thead><tr><th>Tam Adı</th><th>Kullanıcı Adı</th><th>Maaş</th><th>Vardiya</th><th>Durum</th><th>İşlem</th></tr></thead>
                 <tbody>
@@ -256,7 +321,12 @@ export default function Manager() {
                       <td>{c.salary}₺</td>
                       <td><span className="badge badge-purple">{c.shift || '08:00 - 16:00'}</span></td>
                       <td><span className={`badge ${c.is_active ? 'badge-green' : 'badge-red'}`}>{c.is_active ? '🟢 Aktif' : '🔴 Pasif'}</span></td>
-                      <td><button className={`btn btn-sm ${c.is_active ? 'btn-red' : 'btn-green'}`} onClick={() => toggleCashierStatus(c.user_id)}>{c.is_active ? 'Pasife Al' : 'Aktifleştir'}</button></td>
+                      <td>
+                        <div style={{display:'flex',gap:6}}>
+                          <button className="btn btn-sm" style={{backgroundColor:'#64748b',color:'white'}} onClick={() => { setSelectedEmployeeId(c.user_id); setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || '' }); setIsEditEmployeeModalOpen(true); }}>✏️ Düzenle</button>
+                          <button className={`btn btn-sm ${c.is_active ? 'btn-red' : 'btn-green'}`} onClick={() => toggleCashierStatus(c.user_id)}>{c.is_active ? 'Pasife Al' : 'Aktifleştir'}</button>
+                        </div>
+                      </td>
                     </tr>
                   ))}
                   {cashiers.length === 0 && <tr className="empty-row"><td colSpan="6">Kasiyer bulunamadı.</td></tr>}
@@ -419,6 +489,83 @@ export default function Manager() {
             <form onSubmit={handleCampaignSubmit} className="form-grid">
               <div><label className="form-label">İndirim Yüzdesi (1-100)</label><input className="form-input" type="number" placeholder="Örn: 20" required value={campaignDiscount} onChange={e => setCampaignDiscount(e.target.value)} /></div>
               <button type="submit" className="form-submit">Kampanyayı Başlat</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ÜRÜN DÜZENLE MODAL */}
+      {isEditProductModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">✏️ Ürün Düzenle</h3>
+              <button className="modal-close" onClick={() => setIsEditProductModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleEditProductSubmit} className="form-grid">
+              <div><label className="form-label">Ürün Adı</label><input className="form-input" required value={editProductData.name} onChange={e => setEditProductData({...editProductData, name: e.target.value})} /></div>
+              <div>
+                <label className="form-label">Kategori</label>
+                <select className="form-select" required value={editProductData.category} onChange={e => { const v=e.target.value; let vr=20; if(v==='Temel Gıda')vr=1; else if(v==='Temizlik & Kozmetik')vr=10; setEditProductData({...editProductData, category:v, vat_rate:vr}); }}>
+                  <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
+                  <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
+                  <option value="Diğer / Teknoloji">Diğer / Teknoloji (%20 KDV)</option>
+                </select>
+              </div>
+              <div className="form-row">
+                <div><label className="form-label">Kritik Stok Seviyesi</label><input className="form-input" type="number" value={editProductData.critical_level} onChange={e => setEditProductData({...editProductData, critical_level: e.target.value})} /></div>
+                <div><label className="form-label">Oto. Sipariş Miktarı</label><input className="form-input" type="number" value={editProductData.reorder_qty} onChange={e => setEditProductData({...editProductData, reorder_qty: e.target.value})} /></div>
+              </div>
+              <button type="submit" className="form-submit">Değişiklikleri Kaydet</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* YENİ PERSONEL MODAL */}
+      {isEmployeeModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">👤 Yeni Personel Ekle</h3>
+              <button className="modal-close" onClick={() => setIsEmployeeModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleAddEmployee} className="form-grid">
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={employeeFormData.full_name} onChange={e => setEmployeeFormData({...employeeFormData, full_name: e.target.value})} /></div>
+              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={employeeFormData.username} onChange={e => setEmployeeFormData({...employeeFormData, username: e.target.value})} /></div>
+              <div><label className="form-label">Şifre</label><input className="form-input" type="password" required value={employeeFormData.password} onChange={e => setEmployeeFormData({...employeeFormData, password: e.target.value})} /></div>
+              <div className="form-row">
+                <div><label className="form-label">Rol</label>
+                  <select className="form-select" value={employeeFormData.role} onChange={e => setEmployeeFormData({...employeeFormData, role: e.target.value})}>
+                    <option value="cashier">Kasiyer</option>
+                    <option value="manager">Yönetici</option>
+                  </select>
+                </div>
+                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={employeeFormData.salary} onChange={e => setEmployeeFormData({...employeeFormData, salary: e.target.value})} /></div>
+              </div>
+              <div><label className="form-label">Vardiya (Sayı gir: 08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={employeeFormData.shift} onChange={e => setEmployeeFormData({...employeeFormData, shift: handleShiftFormat(e.target.value)})} /></div>
+              <button type="submit" className="form-submit">Sisteme Kaydet</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* PERSONEL DÜZENLE MODAL */}
+      {isEditEmployeeModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">✏️ Personel Düzenle</h3>
+              <button className="modal-close" onClick={() => setIsEditEmployeeModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleEditEmployeeSubmit} className="form-grid">
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={editEmployeeData.full_name} onChange={e => setEditEmployeeData({...editEmployeeData, full_name: e.target.value})} /></div>
+              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={editEmployeeData.username} onChange={e => setEditEmployeeData({...editEmployeeData, username: e.target.value})} /></div>
+              <div className="form-row">
+                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={editEmployeeData.salary} onChange={e => setEditEmployeeData({...editEmployeeData, salary: e.target.value})} /></div>
+                <div><label className="form-label">Vardiya (08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={editEmployeeData.shift} onChange={e => setEditEmployeeData({...editEmployeeData, shift: handleShiftFormat(e.target.value)})} /></div>
+              </div>
+              <button type="submit" className="form-submit">Değişiklikleri Kaydet</button>
             </form>
           </div>
         </div>
