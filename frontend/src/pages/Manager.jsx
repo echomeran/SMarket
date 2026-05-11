@@ -1,617 +1,454 @@
 import { useState, useEffect } from "react";
 import toast from 'react-hot-toast';
-import { ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { ComposedChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import "./Manager.css";
 
 export default function Manager() {
+  const [tab, setTab] = useState("products");
   const [products, setProducts] = useState([]);
-  const [searchTerm, setSearchTerm] = useState("");
-
-  // MODAL VE FORM STATE'LERİ
-  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
-  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
-  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
-  const [selectedBarcode, setSelectedBarcode] = useState("");
-  const [campaignDiscount, setCampaignDiscount] = useState("");
-  const [formData, setFormData] = useState({
-    name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "", vat_rate: "", cost_price: "", critical_level: 10, reorder_qty: 50
-  });
-
-  const fetchProducts = async () => {
-    try {
-      const token = localStorage.getItem('token');
-      const response = await fetch('http://localhost:5000/api/products', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const result = await response.json();
-      if (result.status === "success") setProducts(result.data);
-    } catch (err) { console.error("Ürünler çekilemedi:", err); }
-  };
-
-  useEffect(() => { fetchProducts(); }, []);
-
-
-  const handleAddProduct = async (e) => {
-    e.preventDefault();
-    const token = localStorage.getItem('token');
-    try {
-      const response = await fetch('http://localhost:5000/api/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          name: formData.name,
-          barcode: formData.barcode,
-          price: formData.price,
-          category: formData.category,
-          vat_rate: formData.vat_rate,
-          stock: formData.stock,
-          expiryDate: formData.expiryDate,
-          sale_price: formData.price,
-          cost_price: formData.costPrice // Backend bunu bekliyor
-        })
-      });
-      const resData = await response.json();
-      if (response.ok) {
-        toast.success("Ürün ve ilk stok başarıyla tanımlandı!");
-        setIsProductModalOpen(false);
-        setFormData({}); // Formu boşalt
-        fetchProducts();
-        fetchLogs();
-      } else {
-        toast.error("Hata: " + resData.message);
-      }
-    } catch (err) { toast.error("Ekleme hatası!"); }
-  };
-
   const [cashiers, setCashiers] = useState([]);
   const [reports, setReports] = useState([]);
   const [weeklyReports, setWeeklyReports] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [logs, setLogs] = useState([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [isProductModalOpen, setIsProductModalOpen] = useState(false);
+  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [isCampaignModalOpen, setIsCampaignModalOpen] = useState(false);
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
+  const [selectedBarcode, setSelectedBarcode] = useState("");
+  const [campaignDiscount, setCampaignDiscount] = useState("");
   const [selectedBatches, setSelectedBatches] = useState([]);
+  const [formData, setFormData] = useState({ name:"",barcode:"",category:"",stock:"",price:"",expiryDate:"",vat_rate:"",cost_price:"",critical_level:10,reorder_qty:50 });
 
-  const fetchReports = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('http://localhost:5000/api/reports/profit', { headers: { 'Authorization': `Bearer ${token}` } });
-    const result = await res.json();
-    if (result.status === "success") setReports(result.data);
+  const token = () => localStorage.getItem('token');
+  const headers = () => ({ 'Authorization': `Bearer ${token()}` });
+  const jsonHeaders = () => ({ 'Content-Type':'application/json', 'Authorization': `Bearer ${token()}` });
 
-    const resMonthly = await fetch('http://localhost:5000/api/reports/weekly', { headers: { 'Authorization': `Bearer ${token}` } });
-    const resultMonthly = await resMonthly.json();
-    if (resultMonthly.status === "success") setWeeklyReports(resultMonthly.data);
+  const fetchProducts = async () => {
+    const r = await fetch('http://localhost:5000/api/products', { headers: headers() });
+    const d = await r.json();
+    if (d.status === "success") setProducts(d.data);
   };
-
-  const fetchCustomers = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('http://localhost:5000/api/customers', { headers: { 'Authorization': `Bearer ${token}` } });
-    const result = await res.json();
-    if (result.status === "success") setCustomers(result.data);
-  };
-
   const fetchCashiers = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('http://localhost:5000/api/users/cashiers', {
-      headers: { 'Authorization': `Bearer ${token}` }
-    });
-    const result = await res.json();
-    if (result.status === "success") setCashiers(result.data);
+    const r = await fetch('http://localhost:5000/api/users/cashiers', { headers: headers() });
+    const d = await r.json();
+    if (d.status === "success") setCashiers(d.data);
   };
-
+  const fetchReports = async () => {
+    const r = await fetch('http://localhost:5000/api/reports/profit', { headers: headers() });
+    const d = await r.json();
+    if (d.status === "success") setReports(d.data);
+    const r2 = await fetch('http://localhost:5000/api/reports/weekly', { headers: headers() });
+    const d2 = await r2.json();
+    if (d2.status === "success") setWeeklyReports(d2.data);
+  };
+  const fetchCustomers = async () => {
+    const r = await fetch('http://localhost:5000/api/customers', { headers: headers() });
+    const d = await r.json();
+    if (d.status === "success") setCustomers(d.data);
+  };
   const fetchLogs = async () => {
-    const token = localStorage.getItem('token');
-    const res = await fetch('http://localhost:5000/api/logs', { headers: { 'Authorization': `Bearer ${token}` } });
-    const result = await res.json();
-    if (result.status === "success") setLogs(result.data);
+    const r = await fetch('http://localhost:5000/api/logs', { headers: headers() });
+    const d = await r.json();
+    if (d.status === "success") setLogs(d.data);
   };
 
-  useEffect(() => {
-    fetchProducts();
-    fetchCashiers(); // Kasiyerleri de çek
-    fetchReports();
-    fetchCustomers();
-    fetchLogs();
-  }, []);
+  useEffect(() => { fetchProducts(); fetchCashiers(); fetchReports(); fetchCustomers(); fetchLogs(); }, []);
 
-  // UI Kısmı (Tablonun altına ekle)
+  const handleAddProduct = async (e) => {
+    e.preventDefault();
+    const r = await fetch('http://localhost:5000/api/products', {
+      method:'POST', headers: jsonHeaders(),
+      body: JSON.stringify({ name:formData.name, barcode:formData.barcode, price:formData.price, category:formData.category, vat_rate:formData.vat_rate, stock:formData.stock, expiryDate:formData.expiryDate, sale_price:formData.price, cost_price:formData.costPrice })
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success("Ürün eklendi!"); setIsProductModalOpen(false); setFormData({}); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
+  };
 
-
-
-  // Manager.jsx içindeki handleAddStock fonksiyonunu bununla değiştir:
   const handleAddStock = async (e) => {
     e.preventDefault();
-
-    // Basit bir doğrulama: Değerler boş mu?
-    if (!formData.stock || !formData.expiryDate) {
-      return toast.error("Lütfen miktar ve tarih alanlarını doldurun!");
-    }
-
-    const token = localStorage.getItem('token');
-    try {
-      const response = await fetch('http://localhost:5000/api/batches', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({
-          barcode: selectedBarcode,
-          quantity: parseInt(formData.stock),
-          expiry_date: formData.expiryDate,
-          cost_price: formData.costPrice
-        })
-      });
-
-      const resData = await response.json();
-      if (response.ok) {
-        toast.success("Stok başarıyla eklendi!");
-        setIsStockModalOpen(false);
-        setFormData({ name: "", barcode: "", category: "", stock: "", price: "", expiryDate: "" }); // Formu sıfırla
-        fetchProducts();
-        fetchLogs(); // Logları anında güncelle
-      } else {
-        toast.error("Hata: " + resData.message);
-      }
-    } catch (err) {
-      toast.error("Sunucuya bağlanılamadı!");
-    }
+    if (!formData.stock || !formData.expiryDate) return toast.error("Miktar ve tarih zorunlu!");
+    const r = await fetch('http://localhost:5000/api/batches', {
+      method:'POST', headers: jsonHeaders(),
+      body: JSON.stringify({ barcode:selectedBarcode, quantity:parseInt(formData.stock), expiry_date:formData.expiryDate, cost_price:formData.costPrice })
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success("Stok eklendi!"); setIsStockModalOpen(false); setFormData({}); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
   };
 
   const fetchBatches = async (barcode) => {
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`http://localhost:5000/api/batches/product/${barcode}`, { headers: { 'Authorization': `Bearer ${token}` } });
-      const data = await res.json();
-      if (res.ok) {
-        setSelectedBatches(data.data);
-        setIsBatchModalOpen(true);
-      } else {
-        toast.error(data.message);
-      }
-    } catch (err) { toast.error("Partiler yüklenemedi."); }
+    const r = await fetch(`http://localhost:5000/api/batches/product/${barcode}`, { headers: headers() });
+    const d = await r.json();
+    if (r.ok) { setSelectedBatches(d.data); setIsBatchModalOpen(true); }
+    else toast.error(d.message);
   };
-
 
   const toggleProductStatus = async (barcode) => {
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`http://localhost:5000/api/products/${barcode}/toggle-active`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      if (res.ok) {
-        fetchProducts();
-        fetchLogs();
-      }
-    } catch (err) {
-      toast.error("Hata oluştu.");
-    }
-  };
-
-  const openCampaignModal = (barcode) => {
-    setSelectedBarcode(barcode);
-    setCampaignDiscount("");
-    setIsCampaignModalOpen(true);
+    const r = await fetch(`http://localhost:5000/api/products/${barcode}/toggle-active`, { method:'PUT', headers: headers() });
+    if (r.ok) { fetchProducts(); fetchLogs(); }
+    else toast.error("Hata oluştu.");
   };
 
   const handleCampaignSubmit = async (e) => {
     e.preventDefault();
-    const discount = campaignDiscount;
-    if (!discount || isNaN(discount) || discount <= 0 || discount > 100) return toast.error("Geçerli bir indirim yüzdesi girin (1-100 arası).");
-
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`http://localhost:5000/api/products/${selectedBarcode}/campaign`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ discount_percent: parseFloat(discount) })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-        setIsCampaignModalOpen(false);
-        fetchProducts();
-        fetchLogs();
-      } else {
-        toast.error(data.message);
-      }
-    } catch (err) { toast.error("Bağlantı hatası"); }
+    if (!campaignDiscount || isNaN(campaignDiscount) || campaignDiscount <= 0 || campaignDiscount > 100) return toast.error("1-100 arası değer girin.");
+    const r = await fetch(`http://localhost:5000/api/products/${selectedBarcode}/campaign`, {
+      method:'POST', headers: jsonHeaders(),
+      body: JSON.stringify({ discount_percent: parseFloat(campaignDiscount) })
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); setIsCampaignModalOpen(false); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
   };
 
   const toggleCashierStatus = async (userId) => {
-    const token = localStorage.getItem('token');
-    try {
-      const res = await fetch(`http://localhost:5000/api/users/${userId}/toggle`, {
-        method: 'PUT',
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      const data = await res.json();
-      if (res.ok) {
-        toast.success(data.message);
-        fetchCashiers();
-        fetchLogs(); // Logları anında güncelle
-      } else {
-        toast.error(data.message);
-      }
-    } catch (err) { toast.error("Hata oluştu."); }
+    const r = await fetch(`http://localhost:5000/api/users/${userId}/toggle`, { method:'PUT', headers: headers() });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); fetchCashiers(); fetchLogs(); }
+    else toast.error(d.message);
   };
 
-  const getRowStyle = (status, isActive) => {
-    if (isActive === false) return { backgroundColor: '#f3f4f6', color: '#9ca3af', opacity: 0.6 };
-    if (status === 'expired') return { backgroundColor: '#ffebee' };
-    if (status === 'warning') return { backgroundColor: '#fff8e1' };
-    return {};
-  };
+  const navItems = [
+    { id:"products", icon:"📦", label:"Ürünler" },
+    { id:"staff", icon:"👥", label:"Personel" },
+    { id:"finance", icon:"📊", label:"Finans" },
+    { id:"customers", icon:"🛍️", label:"Müşteriler" },
+    { id:"logs", icon:"📋", label:"İşlem Geçmişi" },
+  ];
+
+  const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
 
   return (
-    <div style={{ padding: '30px', fontFamily: 'sans-serif', backgroundColor: '#f4f7f6', minHeight: '100vh' }}>
-
-      {/* ÜST PANEL */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '20px' }}>
-        <h2>SMarket Dashboard</h2>
-        <div style={{ display: 'flex', gap: '10px' }}>
-          <button onClick={() => { setFormData({}); setIsProductModalOpen(true); }} style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>+ Yeni Ürün Tanımla</button>
-          <input placeholder="Ara..." onChange={(e) => setSearchTerm(e.target.value)} style={{ padding: '10px', borderRadius: '5px', border: '1px solid #ddd' }} />
+    <div className="manager-layout">
+      {/* SIDEBAR */}
+      <aside className="sidebar">
+        <div className="sidebar-brand">
+          <div className="brand-icon">🛒</div>
+          <div>
+            <div className="brand-name">SMarket</div>
+            <div className="brand-role">Yönetici Paneli</div>
+          </div>
         </div>
-      </div>
-
-      {/* ÜRÜN TABLOSU */}
-      <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden', borderCollapse: 'collapse' }}>
-        <thead style={{ backgroundColor: '#eee' }}>
-          <tr>
-            <th style={{ padding: '15px', textAlign: 'left' }}>Ürün</th>
-            <th style={{ padding: '15px', textAlign: 'left' }}>Fiyat</th>
-            <th style={{ padding: '15px', textAlign: 'left' }}>Stok</th>
-            <th style={{ padding: '15px', textAlign: 'center' }}>Durum</th>
-            <th style={{ padding: '15px', textAlign: 'center' }}>İşlemler</th>
-          </tr>
-        </thead>
-        <tbody>
-          {products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase())).map(p => (
-            <tr key={p.barcode} style={{ borderBottom: '1px solid #eee', ...getRowStyle(p.status, p.is_active !== false) }}>
-              <td style={{ padding: '15px' }}>
-                {p.name}
-                {p.is_active === false && <span style={{ marginLeft: '10px', fontSize: '12px', background: '#ef4444', color: 'white', padding: '2px 6px', borderRadius: '4px' }}>Pasif</span>}
-              </td>
-              <td style={{ padding: '15px' }}>
-                {p.old_price && <span style={{ textDecoration: 'line-through', color: '#9ca3af', marginRight: '8px', fontSize: '13px' }}>{p.old_price} ₺</span>}
-                <span style={{ fontWeight: p.old_price ? 'bold' : 'normal', color: p.old_price ? '#10b981' : 'inherit' }}>{p.price} ₺</span>
-              </td>
-              <td style={{ padding: '15px' }}>{p.quantity}</td>
-              <td style={{ padding: '15px', textAlign: 'center' }}>
-                <button
-                  onClick={() => toggleProductStatus(p.barcode)}
-                  style={{ backgroundColor: p.is_active === false ? '#10b981' : '#ef4444', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}
-                >
-                  {p.is_active === false ? 'Aktifleştir' : 'Pasife Al'}
-                </button>
-              </td>
-              <td style={{ padding: '15px', textAlign: 'center', display: 'flex', gap: '5px', justifyContent: 'center' }}>
-                <button onClick={() => { setSelectedBarcode(p.barcode); setIsStockModalOpen(true); }} style={{ backgroundColor: '#f59e0b', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>Stok Ekle</button>
-                <button onClick={() => fetchBatches(p.barcode)} style={{ backgroundColor: '#3b82f6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer' }}>📦 Partiler</button>
-                {!p.old_price && (
-                  <button onClick={() => openCampaignModal(p.barcode)} style={{ backgroundColor: '#8b5cf6', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>🎁 Kampanya</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-
-      <div style={{ marginTop: '40px' }}>
-        <h3>Personel Yönetimi</h3>
-        <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
-          <thead style={{ backgroundColor: '#f3f4f6' }}>
-            <tr>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Tam Adı</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Kullanıcı Adı</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Maaş</th>
-              <th style={{ padding: '12px', textAlign: 'left' }}>Vardiya</th>
-              <th style={{ padding: '12px', textAlign: 'center' }}>Durum</th>
-              <th style={{ padding: '12px', textAlign: 'center' }}>İşlemler</th>
-            </tr>
-          </thead>
-          <tbody>
-            {cashiers.map(c => (
-              <tr key={c.user_id} style={{ borderBottom: '1px solid #eee', backgroundColor: c.is_active ? 'white' : '#f3f4f6', opacity: c.is_active ? 1 : 0.7 }}>
-                <td style={{ padding: '12px' }}>{c.full_name}</td>
-                <td style={{ padding: '12px' }}>{c.username}</td>
-                <td style={{ padding: '12px' }}>{c.salary} ₺</td>
-                <td style={{ padding: '12px' }}><span style={{ backgroundColor: '#e0e7ff', color: '#4f46e5', padding: '4px 8px', borderRadius: '4px', fontSize: '13px' }}>{c.shift || '08:00 - 16:00'}</span></td>
-                <td style={{ padding: '12px', textAlign: 'center' }}>
-                  {c.is_active ? '🟢 Aktif' : '🔴 Pasif'}
-                </td>
-                <td style={{ padding: '12px', textAlign: 'center' }}>
-                  <button
-                    onClick={() => toggleCashierStatus(c.user_id)}
-                    style={{ backgroundColor: c.is_active ? '#ef4444' : '#10b981', color: 'white', border: 'none', padding: '5px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}
-                  >
-                    {c.is_active ? 'Pasife Al' : 'Aktifleştir'}
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      <div style={{ marginTop: '40px' }}>
-        <h3>Geçmiş İşlemler</h3>
-        <div style={{ maxHeight: '400px', overflowY: 'auto', backgroundColor: 'white', borderRadius: '8px', border: '1px solid #e2e8f0' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead style={{ backgroundColor: '#f8fafc', position: 'sticky', top: 0 }}>
-              <tr>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Tarih</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Kullanıcı</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>İşlem Tipi</th>
-                <th style={{ padding: '12px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Detay</th>
-              </tr>
-            </thead>
-            <tbody>
-              {logs.map(log => (
-                <tr key={log.log_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                  <td style={{ padding: '12px', fontSize: '13px' }}>{new Date(log.timestamp).toLocaleString('tr-TR')}</td>
-                  <td style={{ padding: '12px', fontSize: '13px', fontWeight: 'bold' }}>{log.full_name || log.username}</td>
-                  <td style={{ padding: '12px', fontSize: '13px' }}>
-                    <span style={{
-                      padding: '4px 8px', borderRadius: '4px', fontSize: '12px',
-                      backgroundColor: log.action_type === 'IADE_ISLEMI' ? '#fee2e2' : '#dcfce7',
-                      color: log.action_type === 'IADE_ISLEMI' ? '#ef4444' : '#16a34a'
-                    }}>
-                      {log.action_type}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px', fontSize: '12px', color: '#64748b' }}>
-                    {typeof log.new_value === 'object' ? JSON.stringify(log.new_value) : log.new_value}
-                  </td>
-                </tr>
-              ))}
-              {logs.length === 0 && (
-                <tr><td colSpan="4" style={{ padding: '20px', textAlign: 'center', color: '#94a3b8' }}>Henüz kayıt bulunmuyor.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-
-
-      {isProductModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '15px' }}>
-              <h3 style={{ margin: 0 }}>Yeni Ürün Tanımla</h3>
-              <button onClick={() => setIsProductModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✖</button>
+        <nav className="sidebar-nav">
+          {navItems.map(n => (
+            <div key={n.id} className={`nav-item ${tab === n.id ? 'active' : ''}`} onClick={() => setTab(n.id)}>
+              <span className="nav-icon">{n.icon}</span>
+              {n.label}
             </div>
-            <form onSubmit={handleAddProduct} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input placeholder="Ürün Adı" required onChange={e => setFormData({ ...formData, name: e.target.value })} style={{ padding: '10px' }} />
-              <input placeholder="Barkod" required onChange={e => setFormData({ ...formData, barcode: e.target.value })} style={{ padding: '10px' }} />
-              <select required onChange={e => {
-                const val = e.target.value;
-                let vr = 20;
-                if (val === "Temel Gıda") vr = 1;
-                else if (val === "Temizlik & Kozmetik") vr = 10;
-                setFormData({ ...formData, category: val, vat_rate: vr });
-              }} style={{ padding: '10px' }}>
-                <option value="">-- Kategori ve KDV Sınıfı Seç --</option>
-                <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
-                <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
-                <option value="Diğer / Teknoloji">Diğer / Teknoloji (%20 KDV)</option>
-              </select>
+          ))}
+        </nav>
+        <div className="sidebar-footer">
+          <button className="btn btn-ghost" style={{width:'100%'}} onClick={() => { localStorage.clear(); window.location.href='/'; }}>
+            🚪 Çıkış Yap
+          </button>
+        </div>
+      </aside>
 
-              <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
-                <label style={{ fontSize: '12px', color: '#666' }}>Fiyat ve Stok Bilgileri:</label>
-                <input type="number" step="0.01" placeholder="Satış Fiyatı (₺)" required onChange={e => setFormData({ ...formData, price: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
-                <input type="number" step="0.01" placeholder="Maliyet (₺)" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
-                <input type="number" placeholder="Başlangıç Stoğu (Adet)" required onChange={e => setFormData({ ...formData, stock: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
-                <input type="date" required onChange={e => setFormData({ ...formData, expiryDate: e.target.value })} style={{ padding: '10px', marginTop: '5px', width: '100%' }} />
-              </div>
+      {/* MAIN */}
+      <main className="main-content">
+        <div className="topbar">
+          <div>
+            <p className="page-title">{navItems.find(n=>n.id===tab)?.label}</p>
+            <p className="page-subtitle">SMarket Yönetim Sistemi</p>
+          </div>
+          <div className="topbar-actions">
+            {tab === "products" && (
+              <>
+                <div className="search-wrapper">
+                  <span className="search-icon">🔍</span>
+                  <input className="search-input" placeholder="Ürün ara..." onChange={e => setSearchTerm(e.target.value)} />
+                </div>
+                <button className="btn btn-primary" onClick={() => { setFormData({critical_level:10,reorder_qty:50}); setIsProductModalOpen(true); }}>
+                  + Yeni Ürün
+                </button>
+              </>
+            )}
+          </div>
+        </div>
 
-              <div style={{ borderTop: '1px solid #eee', marginTop: '10px', paddingTop: '10px' }}>
-                <label style={{ fontSize: '12px', color: '#666' }}>Otomatik Sipariş Ayarları:</label>
-                <div style={{ display: 'flex', gap: '10px', marginTop: '5px' }}>
-                  <input type="number" placeholder="Kritik Uyarı Seviyesi (Örn: 10)" required value={formData.critical_level} onChange={e => setFormData({ ...formData, critical_level: e.target.value })} style={{ padding: '10px', width: '50%' }} />
-                  <input type="number" placeholder="Otomatik Sipariş Miktarı (Örn: 50)" required value={formData.reorder_qty} onChange={e => setFormData({ ...formData, reorder_qty: e.target.value })} style={{ padding: '10px', width: '50%' }} />
+        <div className="content-area">
+          {/* STATS */}
+          {tab === "products" && (
+            <>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-icon purple">📦</div>
+                  <div><div className="stat-value">{products.length}</div><div className="stat-label">Toplam Ürün</div></div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-icon green">✅</div>
+                  <div><div className="stat-value">{products.filter(p=>p.is_active!==false).length}</div><div className="stat-label">Aktif Ürün</div></div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-icon amber">⚠️</div>
+                  <div><div className="stat-value">{products.filter(p=>p.quantity<10&&p.quantity>0).length}</div><div className="stat-label">Kritik Stok</div></div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-icon blue">🎁</div>
+                  <div><div className="stat-value">{products.filter(p=>p.old_price).length}</div><div className="stat-label">İndirimli Ürün</div></div>
                 </div>
               </div>
 
-              <button type="submit" style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>
-                Sisteme Kaydet
-              </button>
-              <button type="button" onClick={() => setIsProductModalOpen(false)} style={{ padding: '10px', backgroundColor: '#eee', border: 'none', borderRadius: '5px', cursor: 'pointer' }}>
-                İptal
-              </button>
+              <div className="section-card">
+                <table className="data-table">
+                  <thead>
+                    <tr>
+                      <th>Ürün Adı</th>
+                      <th>Kategori</th>
+                      <th>Fiyat</th>
+                      <th>Stok</th>
+                      <th>Durum</th>
+                      <th>İşlemler</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map(p => (
+                      <tr key={p.barcode} style={p.is_active===false?{opacity:0.5}:{}}>
+                        <td style={{fontWeight:600,color:'#f1f5f9'}}>
+                          {p.name}
+                          {p.is_active===false && <span className="badge badge-gray" style={{marginLeft:8}}>Pasif</span>}
+                        </td>
+                        <td><span className="badge badge-purple">{p.category||'—'}</span></td>
+                        <td>
+                          {p.old_price && <span className="price-old">{p.old_price}₺</span>}
+                          <span className={p.old_price?'price-new':'price-normal'}>{p.price}₺</span>
+                        </td>
+                        <td>
+                          <span className={`badge ${p.quantity<=0?'badge-red':p.quantity<10?'badge-amber':'badge-green'}`}>
+                            {p.quantity} adet
+                          </span>
+                        </td>
+                        <td>
+                          <button className={`btn btn-sm ${p.is_active===false?'btn-green':'btn-red'}`} onClick={() => toggleProductStatus(p.barcode)}>
+                            {p.is_active===false?'Aktifleştir':'Pasife Al'}
+                          </button>
+                        </td>
+                        <td>
+                          <div style={{display:'flex',gap:6}}>
+                            <button className="btn btn-sm btn-amber" onClick={() => { setSelectedBarcode(p.barcode); setFormData({}); setIsStockModalOpen(true); }}>Stok Ekle</button>
+                            <button className="btn btn-sm btn-blue" onClick={() => fetchBatches(p.barcode)}>📦 Partiler</button>
+                            {!p.old_price && <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>🎁 Kampanya</button>}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {filtered.length===0 && <tr className="empty-row"><td colSpan="6">Ürün bulunamadı.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* STAFF */}
+          {tab === "staff" && (
+            <div className="section-card">
+              <table className="data-table">
+                <thead><tr><th>Tam Adı</th><th>Kullanıcı Adı</th><th>Maaş</th><th>Vardiya</th><th>Durum</th><th>İşlem</th></tr></thead>
+                <tbody>
+                  {cashiers.map(c => (
+                    <tr key={c.user_id} style={c.is_active?{}:{opacity:0.5}}>
+                      <td style={{fontWeight:600,color:'#f1f5f9'}}>{c.full_name}</td>
+                      <td><span className="badge badge-blue">{c.username}</span></td>
+                      <td>{c.salary}₺</td>
+                      <td><span className="badge badge-purple">{c.shift||'08:00 - 16:00'}</span></td>
+                      <td><span className={`badge ${c.is_active?'badge-green':'badge-red'}`}>{c.is_active?'🟢 Aktif':'🔴 Pasif'}</span></td>
+                      <td><button className={`btn btn-sm ${c.is_active?'btn-red':'btn-green'}`} onClick={()=>toggleCashierStatus(c.user_id)}>{c.is_active?'Pasife Al':'Aktifleştir'}</button></td>
+                    </tr>
+                  ))}
+                  {cashiers.length===0 && <tr className="empty-row"><td colSpan="6">Kasiyer bulunamadı.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* FINANCE */}
+          {tab === "finance" && (
+            <>
+              <div className="section-card" style={{marginBottom:24}}>
+                <div className="section-header"><h3 className="section-title">📈 Haftalık Kâr Grafiği</h3></div>
+                <div className="chart-wrapper" style={{height:350}}>
+                  <ResponsiveContainer>
+                    <ComposedChart data={weeklyReports} margin={{top:10,right:20,bottom:10,left:20}}>
+                      <CartesianGrid stroke="#1e2535" strokeDasharray="3 3"/>
+                      <XAxis dataKey="week" tick={{fill:'#64748b',fontSize:12}}/>
+                      <YAxis tick={{fill:'#64748b',fontSize:12}} domain={([min,max])=>{const m=Math.max(Math.abs(min||0),Math.abs(max||0));const l=m===0?10000:Math.ceil(m*1.3);return[-l,l];}}/>
+                      <Tooltip contentStyle={{background:'#161b26',border:'1px solid #1e2535',borderRadius:10,color:'#e2e8f0'}}/>
+                      <Legend wrapperStyle={{color:'#94a3b8'}}/>
+                      <Line type="monotone" dataKey="net_profit" stroke="#8b5cf6" strokeWidth={3} name="Net Kâr" activeDot={{r:7,fill:'#8b5cf6'}}/>
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+              <div className="section-card">
+                <div className="section-header"><h3 className="section-title">💰 Günlük Finansal Raporlar</h3></div>
+                <table className="data-table">
+                  <thead><tr><th>Tarih</th><th>Fiş</th><th>Ciro</th><th>Maliyet</th><th>KDV</th><th style={{textAlign:'right'}}>Net Kâr</th></tr></thead>
+                  <tbody>
+                    {reports.map((r,i)=>(
+                      <tr key={i}>
+                        <td>{new Date(r.date).toLocaleDateString('tr-TR')}</td>
+                        <td><span className="badge badge-blue">{r.total_receipts} Fiş</span></td>
+                        <td style={{color:'#60a5fa',fontWeight:600}}>{parseFloat(r.total_revenue).toFixed(2)}₺</td>
+                        <td style={{color:'#f87171'}}>-{parseFloat(r.total_cost).toFixed(2)}₺</td>
+                        <td style={{color:'#f87171'}}>-{parseFloat(r.total_vat).toFixed(2)}₺</td>
+                        <td style={{textAlign:'right',fontWeight:700,color:parseFloat(r.net_profit)>=0?'#34d399':'#f87171'}}>{parseFloat(r.net_profit).toFixed(2)}₺</td>
+                      </tr>
+                    ))}
+                    {reports.length===0 && <tr className="empty-row"><td colSpan="6">Henüz veri yok.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+
+          {/* CUSTOMERS */}
+          {tab === "customers" && (
+            <div className="section-card">
+              <table className="data-table">
+                <thead><tr><th>Müşteri Adı</th><th>Telefon</th><th style={{textAlign:'right'}}>Puan</th></tr></thead>
+                <tbody>
+                  {customers.map(c=>(
+                    <tr key={c.customer_id}>
+                      <td style={{fontWeight:600,color:'#f1f5f9'}}>{c.full_name}</td>
+                      <td>{c.phone}</td>
+                      <td style={{textAlign:'right'}}><span className="badge badge-green">{c.loyalty_points} Puan</span></td>
+                    </tr>
+                  ))}
+                  {customers.length===0 && <tr className="empty-row"><td colSpan="3">Kayıtlı müşteri yok.</td></tr>}
+                </tbody>
+              </table>
+            </div>
+          )}
+
+          {/* LOGS */}
+          {tab === "logs" && (
+            <div className="section-card">
+              <div className="log-wrapper">
+                <table className="data-table">
+                  <thead style={{position:'sticky',top:0,background:'#1a2030',zIndex:5}}>
+                    <tr><th>Tarih</th><th>Kullanıcı</th><th>İşlem</th><th>Detay</th></tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(l=>(
+                      <tr key={l.log_id}>
+                        <td style={{fontSize:12,color:'#64748b'}}>{new Date(l.timestamp).toLocaleString('tr-TR')}</td>
+                        <td style={{fontWeight:600}}>{l.full_name||l.username}</td>
+                        <td><span className={`badge ${l.action_type==='IADE_ISLEMI'?'badge-red':'badge-green'}`}>{l.action_type}</span></td>
+                        <td style={{fontSize:12,color:'#64748b',maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{typeof l.new_value==='object'?JSON.stringify(l.new_value):l.new_value}</td>
+                      </tr>
+                    ))}
+                    {logs.length===0 && <tr className="empty-row"><td colSpan="4">Kayıt bulunamadı.</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      </main>
+
+      {/* MODALS */}
+      {isProductModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">📦 Yeni Ürün Tanımla</h3>
+              <button className="modal-close" onClick={()=>setIsProductModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleAddProduct} className="form-grid">
+              <div><label className="form-label">Ürün Adı</label><input className="form-input" placeholder="Ürün adı girin" required onChange={e=>setFormData({...formData,name:e.target.value})}/></div>
+              <div><label className="form-label">Barkod</label><input className="form-input" placeholder="Barkod" required onChange={e=>setFormData({...formData,barcode:e.target.value})}/></div>
+              <div>
+                <label className="form-label">Kategori ve KDV</label>
+                <select className="form-select" required onChange={e=>{const v=e.target.value;let vr=20;if(v==="Temel Gıda")vr=1;else if(v==="Temizlik & Kozmetik")vr=10;setFormData({...formData,category:v,vat_rate:vr});}}>
+                  <option value="">Seçiniz...</option>
+                  <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
+                  <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
+                  <option value="Diğer / Teknoloji">Diğer / Teknoloji (%20 KDV)</option>
+                </select>
+              </div>
+              <hr className="form-divider"/>
+              <div className="form-row">
+                <div><label className="form-label">Satış Fiyatı (₺)</label><input className="form-input" type="number" step="0.01" placeholder="0.00" required onChange={e=>setFormData({...formData,price:e.target.value})}/></div>
+                <div><label className="form-label">Maliyet (₺)</label><input className="form-input" type="number" step="0.01" placeholder="0.00" required onChange={e=>setFormData({...formData,costPrice:e.target.value})}/></div>
+              </div>
+              <div className="form-row">
+                <div><label className="form-label">Başlangıç Stoğu</label><input className="form-input" type="number" placeholder="0" required onChange={e=>setFormData({...formData,stock:e.target.value})}/></div>
+                <div><label className="form-label">Son Kullanma Tarihi</label><input className="form-input" type="date" required onChange={e=>setFormData({...formData,expiryDate:e.target.value})}/></div>
+              </div>
+              <hr className="form-divider"/>
+              <div className="form-row">
+                <div><label className="form-label">Kritik Stok Seviyesi</label><input className="form-input" type="number" value={formData.critical_level} required onChange={e=>setFormData({...formData,critical_level:e.target.value})}/></div>
+                <div><label className="form-label">Oto. Sipariş Miktarı</label><input className="form-input" type="number" value={formData.reorder_qty} required onChange={e=>setFormData({...formData,reorder_qty:e.target.value})}/></div>
+              </div>
+              <button type="submit" className="form-submit">Sisteme Kaydet</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* STOK EKLEME MODAL */}
       {isStockModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0 }}>Yeni Stok Girişi</h3>
-              <button onClick={() => setIsStockModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#666' }}>✖</button>
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">📥 Yeni Stok Girişi</h3>
+              <button className="modal-close" onClick={()=>setIsStockModalOpen(false)}>✕</button>
             </div>
-            <div style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>Barkod: {selectedBarcode}</div>
-            <form onSubmit={handleAddStock} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input type="number" placeholder="Gelecek Miktar" required onChange={e => setFormData({ ...formData, stock: e.target.value })} style={{ padding: '10px' }} />
-
-              <label style={{ fontSize: '12px' }}>Birim Maliyet (Geliş):</label>
-              <input type="number" step="0.01" placeholder="Maliyet (₺)" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} style={{ padding: '10px' }} />
-
-              <label style={{ fontSize: '12px' }}>Etiket Fiyatını Güncelle (Opsiyonel):</label>
-              <input type="number" step="0.01" placeholder="Yeni Satış Fiyatı (₺)" onChange={e => setFormData({ ...formData, price: e.target.value })} style={{ padding: '10px' }} />
-
-              <label style={{ fontSize: '12px' }}>Son Kullanma Tarihi:</label>
-              <input type="date" required onChange={e => setFormData({ ...formData, expiryDate: e.target.value })} style={{ padding: '10px' }} />
-
-              <button type="submit" style={{ padding: '10px', backgroundColor: '#f59e0b', color: 'white', border: 'none', borderRadius: '5px' }}>Stoku ve Fiyatı Onayla</button>
+            <p style={{fontSize:13,color:'#64748b',margin:'0 0 16px'}}>Barkod: <strong style={{color:'#a78bfa'}}>{selectedBarcode}</strong></p>
+            <form onSubmit={handleAddStock} className="form-grid">
+              <div><label className="form-label">Gelecek Miktar (Adet)</label><input className="form-input" type="number" placeholder="0" required onChange={e=>setFormData({...formData,stock:e.target.value})}/></div>
+              <div><label className="form-label">Birim Maliyet (₺)</label><input className="form-input" type="number" step="0.01" placeholder="0.00" required onChange={e=>setFormData({...formData,costPrice:e.target.value})}/></div>
+              <div><label className="form-label">Son Kullanma Tarihi</label><input className="form-input" type="date" required onChange={e=>setFormData({...formData,expiryDate:e.target.value})}/></div>
+              <button type="submit" className="form-submit">Stoku Onayla</button>
             </form>
           </div>
         </div>
       )}
 
-      {/* KAMPANYA MODAL */}
       {isCampaignModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '400px' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
-              <h3 style={{ margin: 0, color: '#1e293b' }}>🎁 İndirim Uygula</h3>
-              <button onClick={() => setIsCampaignModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">🎁 İndirim Uygula</h3>
+              <button className="modal-close" onClick={()=>setIsCampaignModalOpen(false)}>✕</button>
             </div>
-            <div style={{ fontSize: '13px', color: '#666', marginBottom: '15px' }}>Barkod: {selectedBarcode}</div>
-            <form onSubmit={handleCampaignSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <label style={{ fontSize: '12px' }}>Yüzde kaç indirim uygulamak istersiniz? (Örn: 20)</label>
-              <input type="number" placeholder="İndirim %" required value={campaignDiscount} onChange={e => setCampaignDiscount(e.target.value)} style={{ padding: '10px' }} />
-              <button type="submit" style={{ padding: '10px', backgroundColor: '#8b5cf6', color: 'white', border: 'none', borderRadius: '5px', fontWeight: 'bold', cursor: 'pointer' }}>Kampanyayı Başlat</button>
+            <p style={{fontSize:13,color:'#64748b',margin:'0 0 16px'}}>Barkod: <strong style={{color:'#a78bfa'}}>{selectedBarcode}</strong></p>
+            <form onSubmit={handleCampaignSubmit} className="form-grid">
+              <div><label className="form-label">İndirim Yüzdesi (1-100)</label><input className="form-input" type="number" placeholder="Örn: 20" required value={campaignDiscount} onChange={e=>setCampaignDiscount(e.target.value)}/></div>
+              <button type="submit" className="form-submit">Kampanyayı Başlat</button>
             </form>
           </div>
         </div>
       )}
-
-      {/* HAFTALIK FİNANSAL GRAFİK (Sprint 5) */}
-      <div style={{ marginTop: '30px', backgroundColor: 'white', padding: '20px', borderRadius: '12px', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-        <h3>Finans Tablosu</h3>
-        <p style={{ fontSize: '13px', color: '#64748b', marginBottom: '20px' }}>
-          * Gider tablosuna Ürün Maliyetleri, KDV ve aktif kasiyerlerin Haftalık Maaşları (Total) dahildir.
-        </p>
-        <div style={{ width: '100%', height: 400 }}>
-          <ResponsiveContainer>
-            <ComposedChart data={weeklyReports} margin={{ top: 20, right: 20, bottom: 20, left: 20 }}>
-              <CartesianGrid stroke="#f5f5f5" strokeDasharray="3 3" />
-              <XAxis dataKey="week" />
-              <YAxis domain={([dataMin, dataMax]) => {
-                const maxAbs = Math.max(Math.abs(dataMin || 0), Math.abs(dataMax || 0));
-                let limit = maxAbs === 0 ? 10000 : Math.ceil(maxAbs * 1.2);
-                limit = Math.ceil(limit / 100) * 100; // 100'ün katına yuvarla
-                return [-limit, limit];
-              }} />
-              <Tooltip
-                content={({ active, payload, label }) => {
-                  if (active && payload && payload.length) {
-                    const data = payload[0].payload;
-                    return (
-                      <div style={{ backgroundColor: 'white', padding: '15px', border: '1px solid #ccc', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
-                        <p style={{ margin: '0 0 10px 0', fontWeight: 'bold', fontSize: '14px' }}>{label}</p>
-                        <p style={{ margin: '5px 0', color: '#10b981', fontSize: '13px' }}>Brüt Ciro (Gelir): {data.revenue.toLocaleString('tr-TR')} ₺</p>
-                        <p style={{ margin: '5px 0', color: '#ef4444', fontSize: '13px' }}>Toplam Giderler: {data.expenses.toLocaleString('tr-TR')} ₺</p>
-                        <div style={{ borderTop: '1px solid #eee', margin: '10px 0' }}></div>
-                        <p style={{ margin: '0', color: '#3b82f6', fontWeight: 'bold', fontSize: '14px' }}>Gerçek Net Kâr: {data.net_profit.toLocaleString('tr-TR')} ₺</p>
-                      </div>
-                    );
-                  }
-                  return null;
-                }}
-              />
-              <Legend />
-              <Line type="monotone" dataKey="net_profit" stroke="#3b82f6" strokeWidth={3} name="Gerçek Net Kâr" activeDot={{ r: 8 }} />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div style={{ display: 'flex', gap: '20px', marginTop: '40px' }}>
-        {/* KÂR RAPORLARI */}
-        <div style={{ flex: 1 }}>
-          <h3>Finansal Raporlar</h3>
-          <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
-            <thead style={{ backgroundColor: '#f3f4f6' }}>
-              <tr>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Tarih</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Fiş Sayısı</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Ciro (Satış)</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Maliyet</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Ödenecek KDV</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>Net Kâr</th>
-              </tr>
-            </thead>
-            <tbody>
-              {reports.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '12px' }}>{new Date(r.date).toLocaleDateString('tr-TR')}</td>
-                  <td style={{ padding: '12px', fontWeight: 'bold' }}>{r.total_receipts} Fiş</td>
-                  <td style={{ padding: '12px', color: '#3b82f6' }}>{parseFloat(r.total_revenue).toFixed(2)} ₺</td>
-                  <td style={{ padding: '12px', color: '#ef4444' }}>-{parseFloat(r.total_cost).toFixed(2)} ₺</td>
-                  <td style={{ padding: '12px', color: '#ef4444' }}>-{parseFloat(r.total_vat).toFixed(2)} ₺</td>
-                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: parseFloat(r.net_profit) >= 0 ? '#10b981' : '#ef4444' }}>
-                    {parseFloat(r.net_profit).toFixed(2)} ₺
-                  </td>
-                </tr>
-              ))}
-              {reports.length === 0 && (
-                <tr><td colSpan="6" style={{ padding: '15px', textAlign: 'center', color: '#666' }}>Henüz satış/kâr verisi yok.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* MÜŞTERİLER VE PUANLAR */}
-        <div style={{ flex: 1 }}>
-          <h3>Müşteriler</h3>
-          <table style={{ width: '100%', backgroundColor: 'white', borderRadius: '8px', borderCollapse: 'collapse' }}>
-            <thead style={{ backgroundColor: '#f3f4f6' }}>
-              <tr>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Müşteri Adı</th>
-                <th style={{ padding: '12px', textAlign: 'left' }}>Telefon</th>
-                <th style={{ padding: '12px', textAlign: 'right' }}>Puan</th>
-              </tr>
-            </thead>
-            <tbody>
-              {customers.map(c => (
-                <tr key={c.customer_id} style={{ borderBottom: '1px solid #eee' }}>
-                  <td style={{ padding: '12px' }}>{c.full_name}</td>
-                  <td style={{ padding: '12px' }}>{c.phone}</td>
-                  <td style={{ padding: '12px', textAlign: 'right', fontWeight: 'bold', color: '#059669' }}>
-                    {c.loyalty_points} Puan
-                  </td>
-                </tr>
-              ))}
-              {customers.length === 0 && (
-                <tr><td colSpan="3" style={{ padding: '15px', textAlign: 'center', color: '#666' }}>Sistemde kayıtlı müşteri bulunmuyor.</td></tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
       {isBatchModalOpen && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100%', height: '100%', backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '500px', maxHeight: '80vh', overflowY: 'auto' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-              <h2 style={{ margin: 0, color: '#1e293b' }}>📦 Parti Bilgileri (Batches)</h2>
-              <button onClick={() => setIsBatchModalOpen(false)} style={{ background: 'none', border: 'none', fontSize: '20px', cursor: 'pointer', color: '#64748b' }}>✖</button>
+        <div className="modal-overlay">
+          <div className="modal-card" style={{maxWidth:560}}>
+            <div className="modal-header">
+              <h3 className="modal-title">📦 Parti Bilgileri</h3>
+              <button className="modal-close" onClick={()=>setIsBatchModalOpen(false)}>✕</button>
             </div>
-
-            {selectedBatches.length > 0 ? (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '14px' }}>
-                <thead style={{ backgroundColor: '#f8fafc' }}>
-                  <tr>
-                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Parti No</th>
-                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Miktar</th>
-                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Maliyet</th>
-                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>Geliş T.</th>
-                    <th style={{ padding: '10px', textAlign: 'left', borderBottom: '2px solid #e2e8f0' }}>SKT</th>
-                  </tr>
-                </thead>
+            {selectedBatches.length>0?(
+              <table className="data-table">
+                <thead><tr><th>#</th><th>Miktar</th><th>Maliyet</th><th>Geliş T.</th><th>SKT</th></tr></thead>
                 <tbody>
-                  {selectedBatches.map(b => (
-                    <tr key={b.batch_id} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                      <td style={{ padding: '10px' }}>#{b.batch_id}</td>
-                      <td style={{ padding: '10px', fontWeight: 'bold' }}>{b.quantity}</td>
-                      <td style={{ padding: '10px' }}>{b.cost_price} ₺</td>
-                      <td style={{ padding: '10px' }}>{new Date(b.arrival_date).toLocaleDateString('tr-TR')}</td>
-                      <td style={{ padding: '10px', color: new Date(b.expiry_date) < new Date(new Date().setDate(new Date().getDate() + 7)) ? '#ef4444' : 'inherit' }}>
-                        {new Date(b.expiry_date).toLocaleDateString('tr-TR')}
-                      </td>
+                  {selectedBatches.map(b=>(
+                    <tr key={b.batch_id}>
+                      <td style={{color:'#64748b'}}>#{b.batch_id}</td>
+                      <td style={{fontWeight:600}}>{b.quantity}</td>
+                      <td>{b.cost_price}₺</td>
+                      <td>{new Date(b.arrival_date).toLocaleDateString('tr-TR')}</td>
+                      <td style={{color:new Date(b.expiry_date)<new Date(new Date().setDate(new Date().getDate()+7))?'#f87171':'inherit'}}>{new Date(b.expiry_date).toLocaleDateString('tr-TR')}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
-            ) : (
-              <p style={{ textAlign: 'center', color: '#64748b' }}>Bu ürüne ait aktif stok (parti) bulunmuyor.</p>
-            )}
+            ):<p style={{textAlign:'center',color:'#64748b',padding:'20px 0'}}>Bu ürüne ait aktif parti bulunmuyor.</p>}
           </div>
         </div>
       )}
-
     </div>
   );
 }
