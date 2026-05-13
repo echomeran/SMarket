@@ -140,6 +140,7 @@ export default function Cashier() {
                 {p.name}
                 {p.old_price && <span className="product-sale-label"> İNDİRİM</span>}
               </div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: -2, marginBottom: 4 }}>{p.barcode}</div>
               <div className="product-price">
                 {p.old_price && <span className="product-old-price">{p.old_price}₺</span>}
                 {p.price}₺
@@ -265,7 +266,7 @@ export default function Cashier() {
               İade için fiş numarasını saklayın.
             </p>
             <button className="success-close-btn" onClick={() => setCompletedSale(null)}>
-              Yeni Satışa Geç
+              Kapat
             </button>
           </div>
         </div>
