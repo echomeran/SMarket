@@ -77,11 +77,6 @@ export default function Login() {
             {loading ? <span className="btn-spinner" /> : 'Giriş Yap'}
           </button>
         </form>
-
-        <div className="login-hints">
-          <div className="hint-item"><span className="hint-badge manager">Yönetici</span> manager / manager123</div>
-          <div className="hint-item"><span className="hint-badge cashier">Kasiyer</span> kasiyer1 / cashier123</div>
-        </div>
       </div>
     </div>
   );

@@ -27,25 +27,53 @@ export default function Cashier() {
 
   useEffect(() => { fetchData(); }, []);
 
-  const addToCart = (product) => {
+  const addToCart = (product, qtyToAdd = 1) => {
     if (product.is_active === false) return toast.error("Bu ürün pasif durumda!");
     if (product.quantity <= 0) return toast.error("Bu ürünün stoğu kalmamış!");
+    
     const existing = cart.find(i => i.barcode === product.barcode);
-    if (existing) {
-      if (existing.qty + 1 > product.quantity) return toast.error("Mevcut tüm stok sepette!");
-      setCart(cart.map(i => i.barcode === product.barcode ? { ...i, qty: i.qty + 1 } : i));
-    } else {
-      setCart([...cart, { ...product, qty: 1 }]);
+    const currentQty = existing ? existing.qty : 0;
+    
+    if (currentQty + qtyToAdd > product.quantity) {
+      return toast.error(`Mevcut stok yetersiz! (Maks: ${product.quantity})`);
     }
-    toast.success(`${product.name} eklendi`, { duration: 900, icon: '🛒' });
+
+    if (existing) {
+      setCart(cart.map(i => i.barcode === product.barcode ? { ...i, qty: i.qty + qtyToAdd } : i));
+    } else {
+      setCart([...cart, { ...product, qty: qtyToAdd }]);
+    }
+    toast.success(`${product.name} (${qtyToAdd} adet) eklendi`, { duration: 900, icon: '🛒' });
   };
 
   const removeFromCart = (barcode) => setCart(cart.filter(i => i.barcode !== barcode));
 
+  const updateCartQty = (barcode, change) => {
+    const item = cart.find(i => i.barcode === barcode);
+    if (!item) return;
+    const newQty = item.qty + change;
+    if (newQty <= 0) return removeFromCart(barcode);
+    
+    const product = products.find(p => p.barcode === barcode);
+    if (product && newQty > product.quantity) {
+      return toast.error(`Mevcut stok yetersiz! (Maks: ${product.quantity})`);
+    }
+    setCart(cart.map(i => i.barcode === barcode ? { ...i, qty: newQty } : i));
+  };
+
   const handleScan = (e) => {
     e.preventDefault();
-    const found = products.find(p => p.barcode === searchTerm || p.name.toLowerCase() === searchTerm.toLowerCase());
-    if (found) { addToCart(found); setSearchTerm(""); }
+    let search = searchTerm.trim();
+    let qtyToAdd = 1;
+
+    const match = search.match(/^(\d+)\*(.+)$/);
+    if (match) {
+      qtyToAdd = parseInt(match[1]);
+      search = match[2];
+    }
+
+    const found = products.find(p => p.barcode === search || p.name.toLowerCase() === search.toLowerCase());
+    if (found) { addToCart(found, qtyToAdd); setSearchTerm(""); }
     else toast.error("Ürün bulunamadı!");
   };
 
@@ -148,7 +176,6 @@ export default function Cashier() {
             <span className="cashier-brand-name">SMarket</span>
           </div>
           <form onSubmit={handleScan} className="scan-form">
-            <span className="scan-icon">📷</span>
             <input
               className="scan-input"
               placeholder="Barkod okut veya ürün adı yaz, Enter ile ekle..."
@@ -188,7 +215,7 @@ export default function Cashier() {
       {/* RIGHT */}
       <div className="cashier-right">
         <div className="receipt-header">
-          <h3 className="receipt-title">📋 Güncel Fiş</h3>
+          <h3 className="receipt-title">Güncel Fiş</h3>
           <span style={{ fontSize: 13, color: '#475569' }}>{cart.length} ürün</span>
         </div>
 
@@ -226,7 +253,11 @@ export default function Cashier() {
                   <div className="cart-item-name">{item.name}</div>
                   <div className="cart-item-meta">KDV: %{item.vat_rate || 0} • {item.price}₺/adet</div>
                 </div>
-                <span className="cart-item-qty">x{item.qty}</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginRight: '12px' }}>
+                  <button onClick={() => updateCartQty(item.barcode, -1)} style={{ width: 24, height: 24, borderRadius: 4, border: 'none', background: '#334155', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>-</button>
+                  <span className="cart-item-qty" style={{ minWidth: 20, textAlign: 'center' }}>{item.qty}</span>
+                  <button onClick={() => updateCartQty(item.barcode, 1)} style={{ width: 24, height: 24, borderRadius: 4, border: 'none', background: '#334155', color: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                </div>
                 <span className="cart-item-price">{(item.price * item.qty).toFixed(2)}₺</span>
                 <span
                   onClick={() => removeFromCart(item.barcode)}

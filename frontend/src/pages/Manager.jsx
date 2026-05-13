@@ -298,13 +298,13 @@ export default function Manager() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedBarcode(p.barcode); setEditProductData({ name: p.name, category: p.category || 'Temel Gıda', vat_rate: p.vat_rate || 1, critical_level: p.critical_level || 10, reorder_qty: p.reorder_qty || 50 }); setIsEditProductModalOpen(true); }}>✏️ Düzenle</button>
+                            <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedBarcode(p.barcode); setEditProductData({ name: p.name, category: p.category || 'Temel Gıda', vat_rate: p.vat_rate || 1, critical_level: p.critical_level || 10, reorder_qty: p.reorder_qty || 50 }); setIsEditProductModalOpen(true); }}>Düzenle</button>
                             <button className="btn btn-sm btn-amber" onClick={() => { setSelectedBarcode(p.barcode); setFormData({}); setIsStockModalOpen(true); }}>Stok Ekle</button>
-                            <button className="btn btn-sm btn-blue" onClick={() => fetchBatches(p.barcode)}>📦 Partiler</button>
+                            <button className="btn btn-sm btn-blue" onClick={() => fetchBatches(p.barcode)}>Partiler</button>
                             {p.old_price ? (
-                              <button className="btn btn-sm btn-red" onClick={() => handleEndCampaign(p.barcode)}>🔚 Bitir</button>
+                              <button className="btn btn-sm btn-red" onClick={() => handleEndCampaign(p.barcode)}>Bitir</button>
                             ) : (
-                              <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>🎁 Kampanya</button>
+                              <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>Kampanya</button>
                             )}
                           </div>
                         </td>
