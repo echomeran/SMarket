@@ -142,6 +142,13 @@ export default function Manager() {
     else toast.error(d.message);
   };
 
+  const fixTime = (timeStr) => {
+    if (!timeStr) return "-";
+    const date = new Date(timeStr);
+    date.setHours(date.getHours() + 3); 
+    return date.toLocaleString('tr-TR');
+  };
+
   const renderLogDetail = (log) => {
     const val = log.new_value;
     if (!val) return "-";
@@ -460,7 +467,7 @@ export default function Manager() {
                   <tbody>
                     {logs.map(l => (
                       <tr key={l.log_id}>
-                        <td style={{ fontSize: 12, color: '#64748b' }}>{new Date(l.timestamp).toLocaleString('tr-TR')}</td>
+                        <td style={{ fontSize: 12, color: '#64748b' }}>{fixTime(l.timestamp)}</td>
                         <td style={{ fontWeight: 600 }}>{l.full_name || l.username}</td>
                         <td><span className={`badge ${l.action_type === 'IADE_ISLEMI' ? 'badge-red' : 'badge-green'}`}>{l.action_type}</span></td>
                         <td style={{ fontSize: 13, color: '#e2e8f0' }}>{renderLogDetail(l)}</td>
