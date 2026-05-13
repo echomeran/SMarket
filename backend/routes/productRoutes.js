@@ -56,7 +56,9 @@ router.post('/', authenticateToken, async (req, res) => {
         res.json({ status: "success", message: "Ürün ve Maliyetli Stok Kaydedildi." });
     } catch (err) {
         await client.query('ROLLBACK');
-        res.status(500).json({ status: "error", message: err.message });
+        let msg = err.message;
+        if (err.code === '23505') msg = "Bu barkodda zaten bir ürün var.";
+        res.status(400).json({ status: "error", message: msg });
     } finally { client.release(); }
 });
 
@@ -111,6 +113,34 @@ router.post('/:id/campaign', authenticateToken, async (req, res) => {
     }
 });
 
+router.delete('/:id/campaign', authenticateToken, async (req, res) => {
+    const barcode = req.params.id;
+    const client = await db.connect();
+    try {
+        await client.query('BEGIN');
+        const productRes = await client.query('SELECT old_price, name FROM products WHERE barcode = $1 FOR UPDATE', [barcode]);
+        if (productRes.rows.length === 0) return res.status(404).json({ message: "Ürün bulunamadı." });
+        
+        const p = productRes.rows[0];
+        if (!p.old_price) return res.status(400).json({ message: "Bu üründe zaten aktif bir kampanya yok." });
+
+        await client.query('UPDATE products SET sale_price = old_price, old_price = NULL WHERE barcode = $1', [barcode]);
+
+        await client.query(
+            'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'KAMPANYA_BITIRILDI', 'products', JSON.stringify({ barcode, name: p.name, price_restored: p.old_price })]
+        );
+
+        await client.query('COMMIT');
+        res.json({ status: "success", message: "Kampanya bitirildi, eski fiyata dönüldü." });
+    } catch(err) {
+        await client.query('ROLLBACK');
+        res.status(500).json({ status: "error", message: err.message });
+    } finally {
+        client.release();
+    }
+});
+
 router.put('/:barcode', authenticateToken, async (req, res) => {
     const barcode = req.params.barcode;
     const { name, category, vat_rate, critical_level, reorder_qty } = req.body;
@@ -153,14 +183,14 @@ router.post('/waste-expired', authenticateToken, async (req, res) => {
             return res.json({ status: "success", message: "Tarihi geçmiş ürün bulunamadı. Deponuz tertemiz!" });
         }
 
-        // Create a fake sale for 0 TL to trigger cost logic
+        // Fake bir satış oluştur (0 TL) - İstatistiklerde ciro artmasın ama stok dursa bile maliyet raporlarına 'Zarar' yansısın
         const saleInsert = await client.query(
-            "INSERT INTO sales (user_id, total_amount, loyalty_points_earned, payment_method) VALUES ($1, $2, $3, $4) RETURNING sale_id",
-            [req.user.id, 0, 0, 'ZAYI']
+            "INSERT INTO sales (cashier_id, total_amount, vat_amount, points_used) VALUES ($1, $2, $3, $4) RETURNING sale_id",
+            [req.user.id, 0, 0, 0]
         );
         const saleId = saleInsert.rows[0].sale_id;
 
-        // Add sale_items and zero out batches
+        // sale_items ekle ve batch stoklarını sıfırla
         let totalWasted = 0;
         for (const batch of expiredRes.rows) {
             await client.query(
@@ -176,11 +206,11 @@ router.post('/waste-expired', authenticateToken, async (req, res) => {
 
         await client.query(
             "INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)",
-            [req.user.id, 'ZAYI_IMHA_EDILDI', 'batches', JSON.stringify({ total_wasted_items: totalWasted, sale_id: saleId })]
+            [req.user.id, 'ZAYI_IMHA_EDILDI', 'batches', JSON.stringify({ total_wasted_items: totalWasted, sale_id: saleId, info: "SKT'si geçmiş ürünler otomatik imha edildi." })]
         );
 
         await client.query('COMMIT');
-        res.json({ status: "success", message: `${totalWasted} adet tarihi geçmiş ürün imha edildi ve 'Zarar' olarak kaydedildi.` });
+        res.json({ status: "success", message: `${totalWasted} adet tarihi geçmiş ürün otomatik imha edildi.` });
     } catch (err) {
         await client.query('ROLLBACK');
         res.status(500).json({ status: "error", message: err.message });

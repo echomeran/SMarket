@@ -11,6 +11,7 @@ export default function Cashier() {
   const [usePoints, setUsePoints] = useState(false);
   const [isRefundModalOpen, setIsRefundModalOpen] = useState(false);
   const [refundSaleId, setRefundSaleId] = useState("");
+  const [refundSaleDetails, setRefundSaleDetails] = useState(null);
   const [completedSale, setCompletedSale] = useState(null);
 
   const fetchData = async () => {
@@ -81,7 +82,7 @@ export default function Cashier() {
   };
 
   const handleRefund = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     if (!refundSaleId) return toast.error("Fiş numarası girin!");
     const token = localStorage.getItem('token');
     try {
@@ -91,9 +92,42 @@ export default function Cashier() {
         body: JSON.stringify({ sale_id: refundSaleId })
       });
       const d = await r.json();
-      if (r.ok) { toast.success(`İade başarılı! (Ref: ${d.refund_sale_id})`); setIsRefundModalOpen(false); setRefundSaleId(""); fetchData(); }
+      if (r.ok) { 
+        toast.success(`Tüm fiş iade edildi!`); 
+        setIsRefundModalOpen(false); 
+        setRefundSaleId(""); 
+        setRefundSaleDetails(null);
+        fetchData(); 
+      }
       else toast.error(`Hata: ${d.message}`);
     } catch { toast.error("Sunucuya bağlanılamadı!"); }
+  };
+
+  const fetchSaleDetails = async () => {
+    if (!refundSaleId) return toast.error("Sorgulamak için Fiş ID girin!");
+    const token = localStorage.getItem('token');
+    const r = await fetch(`http://localhost:5000/api/sales/${refundSaleId}`, { 
+      headers: { 'Authorization': `Bearer ${token}` } 
+    });
+    const d = await r.json();
+    if (r.ok) setRefundSaleDetails(d);
+    else { toast.error(d.message); setRefundSaleDetails(null); }
+  };
+
+  const refundSingleItem = async (itemId) => {
+    const token = localStorage.getItem('token');
+    const r = await fetch('http://localhost:5000/api/sales/refund-item', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify({ sale_id: refundSaleId, item_id: itemId })
+    });
+    const d = await r.json();
+    if (r.ok) { 
+      toast.success(d.message); 
+      fetchSaleDetails(); 
+      fetchData(); 
+    }
+    else toast.error(d.message);
   };
 
   const filtered = products.filter(p =>
@@ -140,6 +174,7 @@ export default function Cashier() {
                 {p.name}
                 {p.old_price && <span className="product-sale-label"> İNDİRİM</span>}
               </div>
+              <div style={{ fontSize: 11, color: '#94a3b8', marginTop: -2, marginBottom: 4 }}>{p.barcode}</div>
               <div className="product-price">
                 {p.old_price && <span className="product-old-price">{p.old_price}₺</span>}
                 {p.price}₺
@@ -220,25 +255,59 @@ export default function Cashier() {
       {/* REFUND MODAL */}
       {isRefundModalOpen && (
         <div className="c-modal-overlay">
-          <div className="c-modal-card">
+          <div className="c-modal-card" style={{ maxWidth: 500 }}>
             <div className="c-modal-header">
-              <h3 className="c-modal-title">🔄 Fiş İptali / İade</h3>
-              <button className="c-modal-close" onClick={() => setIsRefundModalOpen(false)}>✕</button>
+              <h3 className="c-modal-title">🔄 İade / Ürün İptali</h3>
+              <button className="c-modal-close" onClick={() => { setIsRefundModalOpen(false); setRefundSaleDetails(null); }}>✕</button>
             </div>
-            <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>
-              İptal edilecek fişin numarasını girin. Ürünler stoğa geri eklenir.
-            </p>
-            <form onSubmit={handleRefund}>
-              <input
-                className="c-form-input"
-                type="text"
-                placeholder="Fiş Numarası (Sale ID)"
-                required
-                value={refundSaleId}
-                onChange={e => setRefundSaleId(e.target.value)}
+            
+            <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+              <input 
+                className="c-form-input" 
+                placeholder="Fiş ID girin..." 
+                value={refundSaleId} 
+                onChange={e => setRefundSaleId(e.target.value)} 
               />
-              <button type="submit" className="refund-btn">İadeyi Onayla</button>
-            </form>
+              <button className="checkout-btn" style={{ padding: '0 20px', height: 42, width: 'auto' }} onClick={fetchSaleDetails}>Sorgula</button>
+            </div>
+
+            {refundSaleDetails && (
+              <div className="refund-content">
+                {refundSaleDetails.sale.points_used > 0 ? (
+                  <div style={{ padding: 12, background: '#fef2f2', border: '1px solid #ef4444', borderRadius: 8, color: '#b91c1c', fontSize: 13, marginBottom: 16 }}>
+                    ⚠️ Bu fişte <strong>{refundSaleDetails.sale.points_used}</strong> puan kullanılmıştır. Puanlı alışverişlerde iade yapılamaz.
+                  </div>
+                ) : (
+                  <>
+                    <div style={{ fontSize: 13, color: '#475569', marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
+                      Müşteri: <strong>{refundSaleDetails.sale.customer_name || 'Kayıtsız'}</strong> | Toplam: <strong>{refundSaleDetails.sale.total_amount}₺</strong>
+                    </div>
+                    <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 16 }}>
+                      {refundSaleDetails.items.map(item => (
+                        <div key={item.sale_item_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+                          <div>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{item.name}</div>
+                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                              {item.quantity} adet x {item.unit_price}₺ | SKT: {new Date(item.expiry_date).toLocaleDateString()}
+                            </div>
+                          </div>
+                          <button 
+                            className="btn-red" 
+                            style={{ padding: '6px 12px', fontSize: 12, borderRadius: 6, border: 'none', background: '#fee2e2', color: '#dc2626', cursor: 'pointer' }}
+                            onClick={() => refundSingleItem(item.item_id)}
+                          >İade Et</button>
+                        </div>
+                      ))}
+                    </div>
+                    <button 
+                      className="checkout-btn" 
+                      style={{ backgroundColor: '#dc2626', width: '100%' }} 
+                      onClick={handleRefund}
+                    >TÜM FİŞİ İPTAL ET</button>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -265,7 +334,7 @@ export default function Cashier() {
               İade için fiş numarasını saklayın.
             </p>
             <button className="success-close-btn" onClick={() => setCompletedSale(null)}>
-              Yeni Satışa Geç
+              Kapat
             </button>
           </div>
         </div>

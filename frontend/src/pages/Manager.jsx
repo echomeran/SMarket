@@ -27,6 +27,8 @@ export default function Manager() {
   const [isEditProductModalOpen, setIsEditProductModalOpen] = useState(false);
   const [isEmployeeModalOpen, setIsEmployeeModalOpen] = useState(false);
   const [isEditEmployeeModalOpen, setIsEditEmployeeModalOpen] = useState(false);
+  const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false);
+  const [customerFormData, setCustomerFormData] = useState({ full_name: "", phone: "" });
 
   const token = () => localStorage.getItem('token');
   const headers = () => ({ 'Authorization': `Bearer ${token()}` });
@@ -80,7 +82,7 @@ export default function Manager() {
           toast.error(data.message, { icon: '⚠️' });
           fetchProducts(); fetchReports(); fetchLogs();
         }
-      } catch (_) {}
+      } catch (_) { }
     };
     autoDispose();
   }, []);
@@ -101,7 +103,7 @@ export default function Manager() {
     if (!formData.stock || !formData.expiryDate) return toast.error("Miktar ve tarih zorunlu!");
     const r = await fetch('http://localhost:5000/api/batches', {
       method: 'POST', headers: jsonHeaders(),
-      body: JSON.stringify({ barcode: selectedBarcode, quantity: parseInt(formData.stock), expiry_date: formData.expiryDate, cost_price: formData.costPrice })
+      body: JSON.stringify({ barcode: selectedBarcode, quantity: parseInt(formData.stock), expiry_date: formData.expiryDate, cost_price: formData.costPrice, new_sale_price: formData.newPrice })
     });
     const d = await r.json();
     if (r.ok) { toast.success("Stok eklendi!"); setIsStockModalOpen(false); setFormData({}); fetchProducts(); fetchLogs(); }
@@ -130,6 +132,13 @@ export default function Manager() {
     });
     const d = await r.json();
     if (r.ok) { toast.success(d.message); setIsCampaignModalOpen(false); fetchProducts(); fetchLogs(); }
+    else toast.error(d.message);
+  };
+  
+  const handleEndCampaign = async (barcode) => {
+    const r = await fetch(`http://localhost:5000/api/products/${barcode}/campaign`, { method: 'DELETE', headers: headers() });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); fetchProducts(); fetchLogs(); }
     else toast.error(d.message);
   };
 
@@ -165,6 +174,17 @@ export default function Manager() {
     if (r.ok) { toast.success(d.message); setIsEditEmployeeModalOpen(false); fetchCashiers(); fetchReports(); }
     else toast.error(d.message);
   };
+  
+  const handleAddCustomer = async (e) => {
+    e.preventDefault();
+    const r = await fetch('http://localhost:5000/api/customers', {
+      method: 'POST', headers: jsonHeaders(),
+      body: JSON.stringify(customerFormData)
+    });
+    const d = await r.json();
+    if (r.ok) { toast.success(d.message); setIsCustomerModalOpen(false); setCustomerFormData({ full_name: "", phone: "" }); fetchCustomers(); fetchLogs(); }
+    else toast.error(d.message);
+  };
 
   const toggleCashierStatus = async (userId) => {
     const r = await fetch(`http://localhost:5000/api/users/${userId}/toggle`, { method: 'PUT', headers: headers() });
@@ -181,7 +201,10 @@ export default function Manager() {
     { id: "logs", icon: "📋", label: "İşlem Geçmişi" },
   ];
 
-  const filtered = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()));
+  const filtered = products.filter(p => 
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    p.barcode.includes(searchTerm)
+  );
 
   return (
     <div className="manager-layout">
@@ -235,30 +258,14 @@ export default function Manager() {
           {/* STATS */}
           {tab === "products" && (
             <>
-              <div className="stats-grid">
-                <div className="stat-card">
-                  <div className="stat-icon purple">📦</div>
-                  <div><div className="stat-value">{products.length}</div><div className="stat-label">Toplam Ürün</div></div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-icon green">✅</div>
-                  <div><div className="stat-value">{products.filter(p => p.is_active !== false).length}</div><div className="stat-label">Aktif Ürün</div></div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-icon amber">⚠️</div>
-                  <div><div className="stat-value">{products.filter(p => p.quantity < 10 && p.quantity > 0).length}</div><div className="stat-label">Kritik Stok</div></div>
-                </div>
-                <div className="stat-card">
-                  <div className="stat-icon blue">🎁</div>
-                  <div><div className="stat-value">{products.filter(p => p.old_price).length}</div><div className="stat-label">İndirimli Ürün</div></div>
-                </div>
-              </div>
+
 
               <div className="section-card">
                 <table className="data-table">
                   <thead>
                     <tr>
                       <th>Ürün Adı</th>
+                      <th>Barkod</th>
                       <th>Kategori</th>
                       <th>Fiyat</th>
                       <th>Stok</th>
@@ -273,6 +280,7 @@ export default function Manager() {
                           {p.name}
                           {p.is_active === false && <span className="badge badge-gray" style={{ marginLeft: 8 }}>Pasif</span>}
                         </td>
+                        <td style={{ fontSize: 13, color: '#94a3b8', fontFamily: 'monospace' }}>{p.barcode}</td>
                         <td><span className="badge badge-purple">{p.category || '—'}</span></td>
                         <td>
                           {p.old_price && <span className="price-old">{p.old_price}₺</span>}
@@ -290,15 +298,19 @@ export default function Manager() {
                         </td>
                         <td>
                           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                            <button className="btn btn-sm" style={{backgroundColor:'#64748b',color:'white'}} onClick={() => { setSelectedBarcode(p.barcode); setEditProductData({ name: p.name, category: p.category || 'Temel Gıda', vat_rate: p.vat_rate || 1, critical_level: p.critical_level || 10, reorder_qty: p.reorder_qty || 50 }); setIsEditProductModalOpen(true); }}>✏️ Düzenle</button>
+                            <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedBarcode(p.barcode); setEditProductData({ name: p.name, category: p.category || 'Temel Gıda', vat_rate: p.vat_rate || 1, critical_level: p.critical_level || 10, reorder_qty: p.reorder_qty || 50 }); setIsEditProductModalOpen(true); }}>✏️ Düzenle</button>
                             <button className="btn btn-sm btn-amber" onClick={() => { setSelectedBarcode(p.barcode); setFormData({}); setIsStockModalOpen(true); }}>Stok Ekle</button>
                             <button className="btn btn-sm btn-blue" onClick={() => fetchBatches(p.barcode)}>📦 Partiler</button>
-                            {!p.old_price && <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>🎁 Kampanya</button>}
+                            {p.old_price ? (
+                              <button className="btn btn-sm btn-red" onClick={() => handleEndCampaign(p.barcode)}>🔚 Bitir</button>
+                            ) : (
+                              <button className="btn btn-sm btn-primary" onClick={() => { setSelectedBarcode(p.barcode); setCampaignDiscount(""); setIsCampaignModalOpen(true); }}>🎁 Kampanya</button>
+                            )}
                           </div>
                         </td>
                       </tr>
                     ))}
-                    {filtered.length === 0 && <tr className="empty-row"><td colSpan="6">Ürün bulunamadı.</td></tr>}
+                    {filtered.length === 0 && <tr className="empty-row"><td colSpan="7">Ürün bulunamadı.</td></tr>}
                   </tbody>
                 </table>
               </div>
@@ -308,7 +320,7 @@ export default function Manager() {
           {/* STAFF */}
           {tab === "staff" && (
             <div className="section-card">
-              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
                 <button className="btn btn-primary" onClick={() => setIsEmployeeModalOpen(true)}>+ Yeni Personel Ekle</button>
               </div>
               <table className="data-table">
@@ -322,8 +334,8 @@ export default function Manager() {
                       <td><span className="badge badge-purple">{c.shift || '08:00 - 16:00'}</span></td>
                       <td><span className={`badge ${c.is_active ? 'badge-green' : 'badge-red'}`}>{c.is_active ? '🟢 Aktif' : '🔴 Pasif'}</span></td>
                       <td>
-                        <div style={{display:'flex',gap:6}}>
-                          <button className="btn btn-sm" style={{backgroundColor:'#64748b',color:'white'}} onClick={() => { setSelectedEmployeeId(c.user_id); setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || '' }); setIsEditEmployeeModalOpen(true); }}>✏️ Düzenle</button>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedEmployeeId(c.user_id); setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || '' }); setIsEditEmployeeModalOpen(true); }}>✏️ Düzenle</button>
                           <button className={`btn btn-sm ${c.is_active ? 'btn-red' : 'btn-green'}`} onClick={() => toggleCashierStatus(c.user_id)}>{c.is_active ? 'Pasife Al' : 'Aktifleştir'}</button>
                         </div>
                       </td>
@@ -344,9 +356,28 @@ export default function Manager() {
                   <ResponsiveContainer>
                     <ComposedChart data={weeklyReports} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                       <CartesianGrid stroke="#1e2535" strokeDasharray="3 3" />
-                      <XAxis dataKey="week" tick={{ fill: '#64748b', fontSize: 12 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 12 }} domain={([min, max]) => { const m = Math.max(Math.abs(min || 0), Math.abs(max || 0)); const l = m === 0 ? 10000 : Math.ceil(m * 1.3); return [-l, l]; }} />
-                      <Tooltip contentStyle={{ background: '#161b26', border: '1px solid #1e2535', borderRadius: 10, color: '#e2e8f0' }} />
+                      <XAxis 
+                        dataKey="date" 
+                        tick={{ fill: '#64748b', fontSize: 10 }} 
+                        tickFormatter={(str) => {
+                          const d = new Date(str);
+                          if (isNaN(d)) return str;
+                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth()+1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+                        }}
+                      />
+                      <YAxis 
+                        tick={{ fill: '#64748b', fontSize: 12 }} 
+                        tickFormatter={(val) => `${val}₺`}
+                        domain={(['auto', 'auto'])} 
+                      />
+                      <Tooltip 
+                        contentStyle={{ background: '#161b26', border: '1px solid #1e2535', borderRadius: 10, color: '#e2e8f0' }}
+                        labelFormatter={(label) => {
+                          const d = new Date(label);
+                          if (isNaN(d)) return label;
+                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth()+1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+                        }}
+                      />
                       <Legend wrapperStyle={{ color: '#94a3b8' }} />
                       <Line type="monotone" dataKey="net_profit" stroke="#8b5cf6" strokeWidth={3} name="Net Kâr" activeDot={{ r: 7, fill: '#8b5cf6' }} />
                     </ComposedChart>
@@ -378,6 +409,9 @@ export default function Manager() {
           {/* CUSTOMERS */}
           {tab === "customers" && (
             <div className="section-card">
+              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12 }}>
+                <button className="btn btn-primary" onClick={() => setIsCustomerModalOpen(true)}>+ Yeni Müşteri Ekle</button>
+              </div>
               <table className="data-table">
                 <thead><tr><th>Müşteri Adı</th><th>Telefon</th><th style={{ textAlign: 'right' }}>Puan</th></tr></thead>
                 <tbody>
@@ -470,9 +504,12 @@ export default function Manager() {
             <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>Barkod: <strong style={{ color: '#a78bfa' }}>{selectedBarcode}</strong></p>
             <form onSubmit={handleAddStock} className="form-grid">
               <div><label className="form-label">Gelecek Miktar (Adet)</label><input className="form-input" type="number" placeholder="0" required onChange={e => setFormData({ ...formData, stock: e.target.value })} /></div>
-              <div><label className="form-label">Birim Maliyet (₺)</label><input className="form-input" type="number" step="0.01" placeholder="0.00" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} /></div>
+              <div className="form-row">
+                <div><label className="form-label">Birim Maliyet (₺)</label><input className="form-input" type="number" step="0.01" placeholder="0.00" required onChange={e => setFormData({ ...formData, costPrice: e.target.value })} /></div>
+                <div><label className="form-label">Yeni Satış Fiyatı (Opsiyonel)</label><input className="form-input" type="number" step="0.01" placeholder="Değiştirmek için girin" onChange={e => setFormData({ ...formData, newPrice: e.target.value })} /></div>
+              </div>
               <div><label className="form-label">Son Kullanma Tarihi</label><input className="form-input" type="date" required onChange={e => setFormData({ ...formData, expiryDate: e.target.value })} /></div>
-              <button type="submit" className="form-submit">Stoku Onayla</button>
+              <button type="submit" className="form-submit">Stoğu Onayla</button>
             </form>
           </div>
         </div>
@@ -503,18 +540,18 @@ export default function Manager() {
               <button className="modal-close" onClick={() => setIsEditProductModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleEditProductSubmit} className="form-grid">
-              <div><label className="form-label">Ürün Adı</label><input className="form-input" required value={editProductData.name} onChange={e => setEditProductData({...editProductData, name: e.target.value})} /></div>
+              <div><label className="form-label">Ürün Adı</label><input className="form-input" required value={editProductData.name} onChange={e => setEditProductData({ ...editProductData, name: e.target.value })} /></div>
               <div>
                 <label className="form-label">Kategori</label>
-                <select className="form-select" required value={editProductData.category} onChange={e => { const v=e.target.value; let vr=20; if(v==='Temel Gıda')vr=1; else if(v==='Temizlik & Kozmetik')vr=10; setEditProductData({...editProductData, category:v, vat_rate:vr}); }}>
+                <select className="form-select" required value={editProductData.category} onChange={e => { const v = e.target.value; let vr = 20; if (v === 'Temel Gıda') vr = 1; else if (v === 'Temizlik & Kozmetik') vr = 10; setEditProductData({ ...editProductData, category: v, vat_rate: vr }); }}>
                   <option value="Temel Gıda">Temel Gıda (%1 KDV)</option>
                   <option value="Temizlik & Kozmetik">Temizlik & Kozmetik (%10 KDV)</option>
                   <option value="Diğer / Teknoloji">Diğer / Teknoloji (%20 KDV)</option>
                 </select>
               </div>
               <div className="form-row">
-                <div><label className="form-label">Kritik Stok Seviyesi</label><input className="form-input" type="number" value={editProductData.critical_level} onChange={e => setEditProductData({...editProductData, critical_level: e.target.value})} /></div>
-                <div><label className="form-label">Oto. Sipariş Miktarı</label><input className="form-input" type="number" value={editProductData.reorder_qty} onChange={e => setEditProductData({...editProductData, reorder_qty: e.target.value})} /></div>
+                <div><label className="form-label">Kritik Stok Seviyesi</label><input className="form-input" type="number" value={editProductData.critical_level} onChange={e => setEditProductData({ ...editProductData, critical_level: e.target.value })} /></div>
+                <div><label className="form-label">Oto. Sipariş Miktarı</label><input className="form-input" type="number" value={editProductData.reorder_qty} onChange={e => setEditProductData({ ...editProductData, reorder_qty: e.target.value })} /></div>
               </div>
               <button type="submit" className="form-submit">Değişiklikleri Kaydet</button>
             </form>
@@ -531,19 +568,19 @@ export default function Manager() {
               <button className="modal-close" onClick={() => setIsEmployeeModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleAddEmployee} className="form-grid">
-              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={employeeFormData.full_name} onChange={e => setEmployeeFormData({...employeeFormData, full_name: e.target.value})} /></div>
-              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={employeeFormData.username} onChange={e => setEmployeeFormData({...employeeFormData, username: e.target.value})} /></div>
-              <div><label className="form-label">Şifre</label><input className="form-input" type="password" required value={employeeFormData.password} onChange={e => setEmployeeFormData({...employeeFormData, password: e.target.value})} /></div>
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={employeeFormData.full_name} onChange={e => setEmployeeFormData({ ...employeeFormData, full_name: e.target.value })} /></div>
+              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={employeeFormData.username} onChange={e => setEmployeeFormData({ ...employeeFormData, username: e.target.value })} /></div>
+              <div><label className="form-label">Şifre</label><input className="form-input" type="password" required value={employeeFormData.password} onChange={e => setEmployeeFormData({ ...employeeFormData, password: e.target.value })} /></div>
               <div className="form-row">
                 <div><label className="form-label">Rol</label>
-                  <select className="form-select" value={employeeFormData.role} onChange={e => setEmployeeFormData({...employeeFormData, role: e.target.value})}>
+                  <select className="form-select" value={employeeFormData.role} onChange={e => setEmployeeFormData({ ...employeeFormData, role: e.target.value })}>
                     <option value="cashier">Kasiyer</option>
                     <option value="manager">Yönetici</option>
                   </select>
                 </div>
-                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={employeeFormData.salary} onChange={e => setEmployeeFormData({...employeeFormData, salary: e.target.value})} /></div>
+                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={employeeFormData.salary} onChange={e => setEmployeeFormData({ ...employeeFormData, salary: e.target.value })} /></div>
               </div>
-              <div><label className="form-label">Vardiya (Sayı gir: 08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={employeeFormData.shift} onChange={e => setEmployeeFormData({...employeeFormData, shift: handleShiftFormat(e.target.value)})} /></div>
+              <div><label className="form-label">Vardiya (Sayı gir: 08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={employeeFormData.shift} onChange={e => setEmployeeFormData({ ...employeeFormData, shift: handleShiftFormat(e.target.value) })} /></div>
               <button type="submit" className="form-submit">Sisteme Kaydet</button>
             </form>
           </div>
@@ -559,13 +596,30 @@ export default function Manager() {
               <button className="modal-close" onClick={() => setIsEditEmployeeModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleEditEmployeeSubmit} className="form-grid">
-              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={editEmployeeData.full_name} onChange={e => setEditEmployeeData({...editEmployeeData, full_name: e.target.value})} /></div>
-              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={editEmployeeData.username} onChange={e => setEditEmployeeData({...editEmployeeData, username: e.target.value})} /></div>
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={editEmployeeData.full_name} onChange={e => setEditEmployeeData({ ...editEmployeeData, full_name: e.target.value })} /></div>
+              <div><label className="form-label">Kullanıcı Adı</label><input className="form-input" required value={editEmployeeData.username} onChange={e => setEditEmployeeData({ ...editEmployeeData, username: e.target.value })} /></div>
               <div className="form-row">
-                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={editEmployeeData.salary} onChange={e => setEditEmployeeData({...editEmployeeData, salary: e.target.value})} /></div>
-                <div><label className="form-label">Vardiya (08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={editEmployeeData.shift} onChange={e => setEditEmployeeData({...editEmployeeData, shift: handleShiftFormat(e.target.value)})} /></div>
+                <div><label className="form-label">Maaş (₺)</label><input className="form-input" type="number" required value={editEmployeeData.salary} onChange={e => setEditEmployeeData({ ...editEmployeeData, salary: e.target.value })} /></div>
+                <div><label className="form-label">Vardiya (08001600)</label><input className="form-input" placeholder="08:00 - 16:00" required value={editEmployeeData.shift} onChange={e => setEditEmployeeData({ ...editEmployeeData, shift: handleShiftFormat(e.target.value) })} /></div>
               </div>
               <button type="submit" className="form-submit">Değişiklikleri Kaydet</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* YENİ MÜŞTERİ MODAL */}
+      {isCustomerModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3 className="modal-title">🛍️ Yeni Müşteri Ekle</h3>
+              <button className="modal-close" onClick={() => setIsCustomerModalOpen(false)}>✕</button>
+            </div>
+            <form onSubmit={handleAddCustomer} className="form-grid">
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={customerFormData.full_name} onChange={e => setCustomerFormData({...customerFormData, full_name: e.target.value})} /></div>
+              <div><label className="form-label">Telefon (Örn: 0555...)</label><input className="form-input" required value={customerFormData.phone} onChange={e => setCustomerFormData({...customerFormData, phone: e.target.value})} /></div>
+              <button type="submit" className="form-submit">Müşteriyi Kaydet</button>
             </form>
           </div>
         </div>
