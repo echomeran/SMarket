@@ -55,15 +55,17 @@ router.post('/', authenticateToken, async (req, res) => {
 
             if (kalanMiktar > 0) throw new Error(`${item.name} için yeterli toplam stok yok! (Eksik: ${kalanMiktar})`);
 
-            // --- STOK KONTROLÜ VE E-POSTA (SPRINT 4) ---
+            // --- STOK KONTROLÜ VE E-POSTA (DÜZELTİLMİŞ) ---
             const totalStockRes = await client.query('SELECT SUM(quantity) as total FROM batches WHERE product_id = $1', [product.product_id]);
-            const currentTotalStock = totalStockRes.rows[0].total || 0;
-            
+            const currentTotalStock = parseInt(totalStockRes.rows[0].total) || 0;
+            const stockBeforeSale = currentTotalStock + item.qty; // Bu satıştan hemen önceki miktar
             const criticalLevel = product.critical_level || 10;
-            if (currentTotalStock < criticalLevel) {
+            
+            // SADECE bu satışla birlikte sınırın altına düştüyse mail at
+            if (stockBeforeSale >= criticalLevel && currentTotalStock < criticalLevel) {
                 const { sendLowStockEmail } = require('../utils/mailer');
                 const reorderQty = product.reorder_qty || 50;
-                sendLowStockEmail(product.name, reorderQty, product.product_id).catch(e => console.log(e));
+                sendLowStockEmail(product.name, reorderQty).catch(e => console.log("Mail Hatası:", e));
             }
 
             await client.query(`

@@ -310,15 +310,15 @@ export default function Cashier() {
                   </div>
                 ) : (
                   <>
-                    <div style={{ fontSize: 13, color: '#475569', marginBottom: 12, borderBottom: '1px solid #e2e8f0', paddingBottom: 8 }}>
-                      Müşteri: <strong>{refundSaleDetails.sale.customer_name || 'Kayıtsız'}</strong> | Toplam: <strong>{refundSaleDetails.sale.total_amount}₺</strong>
+                    <div style={{ fontSize: 13, color: '#cbd5e1', marginBottom: 12, borderBottom: '1px solid #334155', paddingBottom: 8 }}>
+                      Müşteri: <strong style={{ color: '#f8fafc' }}>{refundSaleDetails.sale.customer_name || 'Kayıtsız'}</strong> | Toplam: <strong style={{ color: '#f8fafc' }}>{refundSaleDetails.sale.total_amount}₺</strong>
                     </div>
                     <div style={{ maxHeight: 300, overflowY: 'auto', marginBottom: 16 }}>
                       {refundSaleDetails.items.map(item => (
-                        <div key={item.sale_item_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #f1f5f9' }}>
+                        <div key={item.item_id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '12px 0', borderBottom: '1px solid #334155' }}>
                           <div>
-                            <div style={{ fontSize: 14, fontWeight: 600, color: '#1e293b' }}>{item.name}</div>
-                            <div style={{ fontSize: 11, color: '#64748b' }}>
+                            <div style={{ fontSize: 14, fontWeight: 600, color: '#f8fafc' }}>{item.name}</div>
+                            <div style={{ fontSize: 11, color: '#94a3b8' }}>
                               {item.quantity} adet x {item.unit_price}₺ | SKT: {new Date(item.expiry_date).toLocaleDateString()}
                             </div>
                           </div>

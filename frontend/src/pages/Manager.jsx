@@ -134,12 +134,33 @@ export default function Manager() {
     if (r.ok) { toast.success(d.message); setIsCampaignModalOpen(false); fetchProducts(); fetchLogs(); }
     else toast.error(d.message);
   };
-  
+
   const handleEndCampaign = async (barcode) => {
     const r = await fetch(`http://localhost:5000/api/products/${barcode}/campaign`, { method: 'DELETE', headers: headers() });
     const d = await r.json();
     if (r.ok) { toast.success(d.message); fetchProducts(); fetchLogs(); }
     else toast.error(d.message);
+  };
+
+  const renderLogDetail = (log) => {
+    const val = log.new_value;
+    if (!val) return "-";
+    try {
+      const d = typeof val === 'string' ? JSON.parse(val) : val;
+      switch (log.action_type) {
+        case 'YENI_URUN': return `${d.name} ürünü sisteme tanımlandı. (Barkod: ${d.barcode})`;
+        case 'STOK_EKLEME': return `${d.barcode} barkodlu ürüne ${d.quantity} adet stok eklendi. ${d.new_sale_price ? `Fiyat ${d.new_sale_price}₺ yapıldı.` : ''}`;
+        case 'SATIŞ_ONAY': return `${d.barcode} barkodlu üründen ${d.total_sold} adet satıldı.`;
+        case 'URUN_IADE_EDILDI': return `${d.product} iade alındı. (Fiş: ${d.sale_id})`;
+        case 'KAMPANYA_BASLATILDI': return `${d.barcode} barkodlu üründe %${d.discount} indirim başlatıldı.`;
+        case 'KAMPANYA_BITIRILDI': return `${d.name} ürünündeki kampanya bitirildi.`;
+        case 'ZAYI_IMHA_EDILDI': return `${d.total_wasted_items} adet SKT'si geçmiş ürün imha edildi.`;
+        case 'YENI_MUSTERI_EKLE': return `Yeni müşteri kaydedildi: ${d.full_name}`;
+        case 'URUN_DUZENLENDI': return `${d.name} ürün bilgileri güncellendi.`;
+        case 'URUN_DURUM_DEGISTI': return `${d.name} durumu ${d.is_active ? 'Aktif' : 'Pasif'} yapıldı.`;
+        default: return JSON.stringify(d);
+      }
+    } catch (e) { return JSON.stringify(val); }
   };
 
   const handleEditProductSubmit = async (e) => {
@@ -174,7 +195,7 @@ export default function Manager() {
     if (r.ok) { toast.success(d.message); setIsEditEmployeeModalOpen(false); fetchCashiers(); fetchReports(); }
     else toast.error(d.message);
   };
-  
+
   const handleAddCustomer = async (e) => {
     e.preventDefault();
     const r = await fetch('http://localhost:5000/api/customers', {
@@ -201,8 +222,8 @@ export default function Manager() {
     { id: "logs", icon: "📋", label: "İşlem Geçmişi" },
   ];
 
-  const filtered = products.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) || 
+  const filtered = products.filter(p =>
+    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     p.barcode.includes(searchTerm)
   );
 
@@ -335,7 +356,7 @@ export default function Manager() {
                       <td><span className={`badge ${c.is_active ? 'badge-green' : 'badge-red'}`}>{c.is_active ? '🟢 Aktif' : '🔴 Pasif'}</span></td>
                       <td>
                         <div style={{ display: 'flex', gap: 6 }}>
-                          <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedEmployeeId(c.user_id); setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || '' }); setIsEditEmployeeModalOpen(true); }}>✏️ Düzenle</button>
+                          <button className="btn btn-sm" style={{ backgroundColor: '#64748b', color: 'white' }} onClick={() => { setSelectedEmployeeId(c.user_id); setEditEmployeeData({ full_name: c.full_name, username: c.username, salary: c.salary, shift: c.shift || '' }); setIsEditEmployeeModalOpen(true); }}>Düzenle</button>
                           <button className={`btn btn-sm ${c.is_active ? 'btn-red' : 'btn-green'}`} onClick={() => toggleCashierStatus(c.user_id)}>{c.is_active ? 'Pasife Al' : 'Aktifleştir'}</button>
                         </div>
                       </td>
@@ -351,31 +372,31 @@ export default function Manager() {
           {tab === "finance" && (
             <>
               <div className="section-card" style={{ marginBottom: 24 }}>
-                <div className="section-header"><h3 className="section-title">📈 Haftalık Kâr Grafiği</h3></div>
+                <div className="section-header"><h3 className="section-title">Günlük Kâr Grafiği</h3></div>
                 <div className="chart-wrapper" style={{ height: 350 }}>
                   <ResponsiveContainer>
                     <ComposedChart data={weeklyReports} margin={{ top: 10, right: 20, bottom: 10, left: 20 }}>
                       <CartesianGrid stroke="#1e2535" strokeDasharray="3 3" />
-                      <XAxis 
-                        dataKey="date" 
-                        tick={{ fill: '#64748b', fontSize: 10 }} 
+                      <XAxis
+                        dataKey="date"
+                        tick={{ fill: '#64748b', fontSize: 10 }}
                         tickFormatter={(str) => {
                           const d = new Date(str);
                           if (isNaN(d)) return str;
-                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth()+1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
                         }}
                       />
-                      <YAxis 
-                        tick={{ fill: '#64748b', fontSize: 12 }} 
+                      <YAxis
+                        tick={{ fill: '#64748b', fontSize: 12 }}
                         tickFormatter={(val) => `${val}₺`}
-                        domain={(['auto', 'auto'])} 
+                        domain={(['auto', 'auto'])}
                       />
-                      <Tooltip 
+                      <Tooltip
                         contentStyle={{ background: '#161b26', border: '1px solid #1e2535', borderRadius: 10, color: '#e2e8f0' }}
                         labelFormatter={(label) => {
                           const d = new Date(label);
                           if (isNaN(d)) return label;
-                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth()+1).toString().padStart(2, '0')}.${d.getFullYear()}`;
+                          return `${d.getDate().toString().padStart(2, '0')}.${(d.getMonth() + 1).toString().padStart(2, '0')}.${d.getFullYear()}`;
                         }}
                       />
                       <Legend wrapperStyle={{ color: '#94a3b8' }} />
@@ -385,7 +406,7 @@ export default function Manager() {
                 </div>
               </div>
               <div className="section-card">
-                <div className="section-header"><h3 className="section-title">💰 Günlük Finansal Raporlar</h3></div>
+                <div className="section-header"><h3 className="section-title">Günlük Finansal Raporlar</h3></div>
                 <table className="data-table">
                   <thead><tr><th>Tarih</th><th>Fiş</th><th>Ciro</th><th>Maliyet</th><th>KDV</th><th style={{ textAlign: 'right' }}>Net Kâr</th></tr></thead>
                   <tbody>
@@ -409,7 +430,7 @@ export default function Manager() {
           {/* CUSTOMERS */}
           {tab === "customers" && (
             <div className="section-card">
-              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:12 }}>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12 }}>
                 <button className="btn btn-primary" onClick={() => setIsCustomerModalOpen(true)}>+ Yeni Müşteri Ekle</button>
               </div>
               <table className="data-table">
@@ -442,7 +463,7 @@ export default function Manager() {
                         <td style={{ fontSize: 12, color: '#64748b' }}>{new Date(l.timestamp).toLocaleString('tr-TR')}</td>
                         <td style={{ fontWeight: 600 }}>{l.full_name || l.username}</td>
                         <td><span className={`badge ${l.action_type === 'IADE_ISLEMI' ? 'badge-red' : 'badge-green'}`}>{l.action_type}</span></td>
-                        <td style={{ fontSize: 12, color: '#64748b', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{typeof l.new_value === 'object' ? JSON.stringify(l.new_value) : l.new_value}</td>
+                        <td style={{ fontSize: 13, color: '#e2e8f0' }}>{renderLogDetail(l)}</td>
                       </tr>
                     ))}
                     {logs.length === 0 && <tr className="empty-row"><td colSpan="4">Kayıt bulunamadı.</td></tr>}
@@ -498,7 +519,7 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3 className="modal-title">📥 Yeni Stok Girişi</h3>
+              <h3 className="modal-title">Yeni Stok Girişi</h3>
               <button className="modal-close" onClick={() => setIsStockModalOpen(false)}>✕</button>
             </div>
             <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>Barkod: <strong style={{ color: '#a78bfa' }}>{selectedBarcode}</strong></p>
@@ -519,7 +540,7 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3 className="modal-title">🎁 İndirim Uygula</h3>
+              <h3 className="modal-title">İndirim Uygula</h3>
               <button className="modal-close" onClick={() => setIsCampaignModalOpen(false)}>✕</button>
             </div>
             <p style={{ fontSize: 13, color: '#64748b', margin: '0 0 16px' }}>Barkod: <strong style={{ color: '#a78bfa' }}>{selectedBarcode}</strong></p>
@@ -536,7 +557,7 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3 className="modal-title">✏️ Ürün Düzenle</h3>
+              <h3 className="modal-title">Ürün Düzenle</h3>
               <button className="modal-close" onClick={() => setIsEditProductModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleEditProductSubmit} className="form-grid">
@@ -592,7 +613,7 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3 className="modal-title">✏️ Personel Düzenle</h3>
+              <h3 className="modal-title">Personel Düzenle</h3>
               <button className="modal-close" onClick={() => setIsEditEmployeeModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleEditEmployeeSubmit} className="form-grid">
@@ -613,12 +634,27 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card">
             <div className="modal-header">
-              <h3 className="modal-title">🛍️ Yeni Müşteri Ekle</h3>
+              <h3 className="modal-title">Yeni Müşteri Ekle</h3>
               <button className="modal-close" onClick={() => setIsCustomerModalOpen(false)}>✕</button>
             </div>
             <form onSubmit={handleAddCustomer} className="form-grid">
-              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={customerFormData.full_name} onChange={e => setCustomerFormData({...customerFormData, full_name: e.target.value})} /></div>
-              <div><label className="form-label">Telefon (Örn: 0555...)</label><input className="form-input" required value={customerFormData.phone} onChange={e => setCustomerFormData({...customerFormData, phone: e.target.value})} /></div>
+              <div><label className="form-label">Ad Soyad</label><input className="form-input" required value={customerFormData.full_name} onChange={e => setCustomerFormData({ ...customerFormData, full_name: e.target.value })} /></div>
+              <div>
+                <label className="form-label">Telefon No</label>
+                <input
+                  className="form-input"
+                  required
+                  placeholder="5XXXXXXXXX"
+                  maxLength={10}
+                  value={customerFormData.phone}
+                  onChange={e => {
+                    const val = e.target.value.replace(/\D/g, ''); // Sadece rakamlar
+                    if (val.length > 0 && val[0] !== '5') return; // 5 ile başlamıyorsa engelle
+                    setCustomerFormData({ ...customerFormData, phone: val });
+                  }}
+                />
+                <small style={{ color: '#64748b', fontSize: 11 }}>10 haneli, başında 0 olmadan (Örn: 5051234455)</small>
+              </div>
               <button type="submit" className="form-submit">Müşteriyi Kaydet</button>
             </form>
           </div>
@@ -629,7 +665,7 @@ export default function Manager() {
         <div className="modal-overlay">
           <div className="modal-card" style={{ maxWidth: 560 }}>
             <div className="modal-header">
-              <h3 className="modal-title">📦 Parti Bilgileri</h3>
+              <h3 className="modal-title">Parti Bilgileri</h3>
               <button className="modal-close" onClick={() => setIsBatchModalOpen(false)}>✕</button>
             </div>
             {selectedBatches.length > 0 ? (
