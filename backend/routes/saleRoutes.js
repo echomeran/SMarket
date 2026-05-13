@@ -111,28 +111,121 @@ router.post('/', authenticateToken, async (req, res) => {
     }
 });
 
-// İADE MODÜLÜ (TAM İADE)
+// Fiş Detayı Getir (İade Öncesi Kontrol İçin)
+router.get('/:id', authenticateToken, async (req, res) => {
+    try {
+        const saleRes = await db.query(`
+            SELECT s.*, c.full_name as customer_name 
+            FROM sales s 
+            LEFT JOIN customers c ON s.customer_id = c.customer_id 
+            WHERE s.sale_id = $1`, [req.params.id]);
+            
+        if (saleRes.rows.length === 0) return res.status(404).json({ message: "Fiş bulunamadı." });
+        const sale = saleRes.rows[0];
+
+        // Ürünleri getir
+        const itemsRes = await db.query(`
+            SELECT si.*, p.name, p.barcode, b.expiry_date
+            FROM sale_items si
+            JOIN batches b ON si.batch_id = b.batch_id
+            JOIN products p ON b.product_id = p.product_id
+            WHERE si.sale_id = $1 AND (si.is_returned IS FALSE OR si.is_returned IS NULL)`, [req.params.id]);
+
+        res.json({ status: "success", sale, items: itemsRes.rows });
+    } catch (err) {
+        res.status(500).json({ status: "error", message: err.message });
+    }
+});
+
+// Ürün Bazlı İade
+router.post('/refund-item', authenticateToken, async (req, res) => {
+    const { sale_id, item_id } = req.body;
+    const client = await db.connect();
+
+    try {
+        await client.query('BEGIN');
+        
+        // 1. Fişi ve Puan Durumunu Kontrol Et
+        const saleRes = await client.query('SELECT * FROM sales WHERE sale_id = $1 FOR UPDATE', [sale_id]);
+        if (saleRes.rows.length === 0) throw new Error("Fiş bulunamadı.");
+        const sale = saleRes.rows[0];
+
+        if (sale.points_used > 0) throw new Error("Puan kullanılan alışverişlerde iade yapılamaz.");
+
+        // 2. İade edilecek kalemi bul
+        const itemRes = await client.query(`
+            SELECT si.*, b.expiry_date, p.name 
+            FROM sale_items si 
+            JOIN batches b ON si.batch_id = b.batch_id 
+            JOIN products p ON b.product_id = p.product_id
+            WHERE si.item_id = $1 AND si.sale_id = $2 AND (si.is_returned IS FALSE OR si.is_returned IS NULL)`, [item_id, sale_id]);
+        
+        if (itemRes.rows.length === 0) throw new Error("İade edilecek ürün kaydı bulunamadı veya zaten iade edilmiş.");
+        const item = itemRes.rows[0];
+
+        // 3. SKT Kontrolü (Bugünden önceyse iade alma)
+        const today = new Date();
+        const expiry = new Date(item.expiry_date);
+        if (expiry < today) throw new Error(`Bu ürünün SKT'si (${item.expiry_date}) geçmiş, iade alınamaz!`);
+
+        // 4. Stoku geri yükle
+        await client.query('UPDATE batches SET quantity = quantity + $1 WHERE batch_id = $2', [item.quantity, item.batch_id]);
+
+        // 5. Fiş toplamını ve KDV'sini düş
+        const itemTotal = parseFloat(item.unit_price) * item.quantity;
+        const itemVat = itemTotal * (item.vat_rate / 100);
+        
+        await client.query(
+            'UPDATE sales SET total_amount = total_amount - $1, vat_amount = vat_amount - $2 WHERE sale_id = $3',
+            [itemTotal, itemVat, sale_id]
+        );
+
+        // 6. Eğer müşteri varsa kazandığı puanı geri al
+        if (sale.customer_id) {
+            const pointsToReduce = Math.floor(itemTotal);
+            await client.query('UPDATE customers SET loyalty_points = loyalty_points - $1 WHERE customer_id = $2', [pointsToReduce, sale.customer_id]);
+        }
+
+        // 7. Kalemi "iade edildi" olarak işaretle (Silmek yerine daha güvenli)
+        await client.query('UPDATE sale_items SET is_returned = true WHERE item_id = $1', [item_id]);
+
+        await client.query(
+            'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
+            [req.user.id, 'URUN_IADE_EDILDI', 'sale_items', JSON.stringify({ sale_id, product: item.name, qty: item.quantity })]
+        );
+
+        await client.query('COMMIT');
+        res.json({ status: "success", message: "Ürün iadesi başarıyla yapıldı, stok güncellendi." });
+
+    } catch (err) {
+        await client.query('ROLLBACK');
+        res.status(400).json({ status: "error", message: err.message });
+    } finally {
+        client.release();
+    }
+});
+
+// Eski refund endpoint'ini de (Tam İade) güncelleyelim
 router.post('/refund', authenticateToken, async (req, res) => {
     const { sale_id } = req.body;
     const client = await db.connect();
 
     try {
         await client.query('BEGIN');
-        
-        const saleRes = await client.query('SELECT * FROM sales WHERE sale_id = $1', [sale_id]);
+        const saleRes = await client.query('SELECT * FROM sales WHERE sale_id = $1 FOR UPDATE', [sale_id]);
         if (saleRes.rows.length === 0) throw new Error("Fatura bulunamadı.");
         const sale = saleRes.rows[0];
-        
-        if (sale.total_amount <= 0) throw new Error("Bu fatura zaten iade edilmiş veya geçersiz tutar.");
 
-        const itemsRes = await client.query('SELECT * FROM sale_items WHERE sale_id = $1', [sale_id]);
+        if (sale.points_used > 0) throw new Error("Puan kullanılan alışverişlerde iade yapılamaz.");
+        
+        const itemsRes = await client.query(`
+            SELECT si.*, b.expiry_date FROM sale_items si 
+            JOIN batches b ON si.batch_id = b.batch_id 
+            WHERE si.sale_id = $1 AND (si.is_returned IS FALSE OR si.is_returned IS NULL)`, [sale_id]);
         
         for (const item of itemsRes.rows) {
             await client.query('UPDATE batches SET quantity = quantity + $1 WHERE batch_id = $2', [item.quantity, item.batch_id]);
-            await client.query(
-                'INSERT INTO audit_logs (user_id, action_type, table_affected, new_value) VALUES ($1, $2, $3, $4)',
-                [req.user.id, 'IADE_ISLEMI', 'batches', JSON.stringify({ batch_id: item.batch_id, qty_returned: item.quantity })]
-            );
+            await client.query('UPDATE sale_items SET is_returned = true WHERE item_id = $1', [item.item_id]);
         }
 
         if (sale.customer_id) {
@@ -142,21 +235,16 @@ router.post('/refund', authenticateToken, async (req, res) => {
             await client.query('UPDATE customers SET loyalty_points = loyalty_points + $1 WHERE customer_id = $2', [diff, sale.customer_id]);
         }
 
-        // Negatif insert yapamıyoruz çünkü sale_items tablosunda (quantity > 0) CHECK kısıtlaması var.
-        // Bu yüzden "Tam İade" işleminde faturayı ve kalemlerini siliyoruz (Soft delete yerine Hard Delete yapıyoruz).
-        // Ancak bu işlemin tüm detayları audit_logs tablosuna işlendiği için yönetici bunu görebilecek.
+        // Fişin kendisini tamamen siliyoruz (veya tutmak istersen tutabiliriz)
         await client.query('DELETE FROM sale_items WHERE sale_id = $1', [sale_id]);
         await client.query('DELETE FROM sales WHERE sale_id = $1', [sale_id]);
 
         await client.query('COMMIT');
-        res.json({ status: "success", message: "İade başarıyla tamamlandı. Fatura iptal edildi.", refund_sale_id: sale_id });
-
+        res.json({ status: "success", message: "Tüm fiş başarıyla iade edildi." });
     } catch (err) {
         await client.query('ROLLBACK');
         res.status(400).json({ status: "error", message: err.message });
-    } finally {
-        client.release();
-    }
+    } finally { client.release(); }
 });
 
 module.exports = router;
