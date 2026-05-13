@@ -59,13 +59,11 @@ router.post('/', authenticateToken, async (req, res) => {
             const totalStockRes = await client.query('SELECT SUM(quantity) as total FROM batches WHERE product_id = $1', [product.product_id]);
             const currentTotalStock = totalStockRes.rows[0].total || 0;
             
-            // Kritik seviyeyi veritabanından okuyoruz (varsayılan 10)
             const criticalLevel = product.critical_level || 10;
             if (currentTotalStock < criticalLevel) {
                 const { sendLowStockEmail } = require('../utils/mailer');
-                // Satişi bloklamamak için await KULLANMADAN asenkron gönderiyoruz
-                const reorderQty = product.reorder_qty || 50; // Eğer girilmemişse varsayılan 50 adet sipariş et
-                sendLowStockEmail(product.name, reorderQty).catch(e => console.log(e));
+                const reorderQty = product.reorder_qty || 50;
+                sendLowStockEmail(product.name, reorderQty, product.product_id).catch(e => console.log(e));
             }
 
             await client.query(`

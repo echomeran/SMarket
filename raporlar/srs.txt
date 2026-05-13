@@ -1,0 +1,461 @@
+İÇİNDEKİLER
+GEREKSİNİMLER	3
+1.1 Gerekli Durum ve Modlar	3
+1.2 YKE Fonksiyonel Gereksinimleri	4
+1.2.1 Kullanıcı Kimlik Doğrulama ve Rol Tabanlı Erişim Kontrolü	4
+1.2.2 Envanter Yönetimi ve FIFO Motoru	5
+1.2.3 Satış ve KDV Sistemi	5
+1.2.4 Otomatik Tedarik Zinciri ve E-Posta Bildirimi	6
+1.2.5 Müşteri Puan Sistemi	6
+1.2.6 Kar Hesaplama Motoru	7
+1.3 YKE Dış Arayüz Gereksinimleri	7
+1.3.1 Arayüz Tanımlaması ve Diyagramları	8
+1.3.2      (Arayüzün Projeye Özgün Tanımlayıcısı)	8
+1.4 YKE Dahili Arayüz Gereksinimleri	9
+1.5 YKE Dahili Veri Gereksinimleri	9
+1.6 Uyarlama Gereksinimleri	9
+1.7 Emniyet Gereksinimleri	10
+1.8 Güvenlik ve Gizlilik Gereksinimleri	10
+1.9 YKE Ortam Gereksinimleri	11
+1.10 Bilgisayar Kaynak Gereksinimleri	12
+1.10.1 Bilgisayar Donanım Gereksinimleri	13
+1.10.2 Bilgisayar Donanımı Kaynak Kullanımı Gereksinimleri	14
+1.10.3 Bilgisayar Yazılım Gereksinimleri	15
+1.10.4 Bilgisayar İletişim Gereksinimleri	16
+1.11 Yazılım Kalite Faktörleri	17
+1.12 Tasarım ve Uygulama Kısıtlamaları	18
+1.13 Personelle İlgili Gereksinimler	19
+1.14 Eğitimle İlgili Gereksinimler	20
+1.15 Lojistikle İlgili Gereksinimler	20
+1.16 Diğer Gereksinimler	21
+1.17 Ambalajlama Gereksinimleri	22
+1.18 Gereksinimlerin Öncelikleri ve Kritikliği	26
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+GEREKSİNİMLER
+1.1 Gerekli Durum ve Modlar
+SMarket yazılım sistemi (YKE), farklı operasyonel senaryolara, sistem bakım gereksinimlerine, olası ağ/servis kesintilerine ve kullanıcı yetki hiyerarşisine uyum sağlayabilmek amacıyla beş temel durum ve modda çalışacak şekilde tasarlanmıştır. Sistemin veri bütünlüğünü ve operasyonel sürekliliğini garanti altına alan bu modlar aşağıda detaylandırılmıştır:
+1. Sistem Başlatma ve Hazırlık Durumu (Initialization State): Sistemin sunucu üzerinde ilk kez ayağa kalktığı veya yeniden başlatıldığı durumdur. Bu aşamada YKE, PostgreSQL veritabanı bağlantılarını test eder, JWT doğrulama anahtarlarını yükler ve Nodemailer iletişim protokollerinin çalışır durumda olup olmadığını denetler. Kullanıcı girişlerine henüz izin verilmeyen, sadece arka plan servislerinin hazır hale getirildiği çok kısa süreli bir durumdur.
+2. Aktif Operasyon - Yönetici (Manager) Modu: Sistemin tüm fonksiyonellikleriyle eksiksiz çalıştığı ve en üst düzey yetkilendirmeye sahip operasyonel moddur. Bu modda sistem; personel performans ve maaş verilerinin işlenmesi, dinamik KDV oranlarının güncellenmesi, FIFO envanterine manuel müdahale edilmesi, kâr/zarar raporlarının oluşturulması ve Audit Log kayıtlarının incelenmesi gibi tüm idari gereksinimleri kesintisiz olarak karşılar.
+3. Aktif Operasyon - Kasiyer (Cashier) Modu: Sistemin günlük perakende satış işlemlerini yürütmek üzere sınırlandırıldığı aktif operasyon modudur. Yönetici modundan farklı olarak bu modda YKE, RBAC politikaları gereği idari panelleri tamamen gizler. Sistem bu modda yalnızca POS ekranının çalıştırılması, barkod okutma, eşzamanlı stok düşümü yapma, KDV hesaplama ve sadakat puanı kazanım/harcama gereksinimlerini yerine getirmeye odaklanır.
+4. Bozulmuş / Kısıtlı Durum (Degraded Mode): Sistemin bağımlı olduğu dış servislerde (örneğin internet kesintisi nedeniyle Nodemailer sunucularına ulaşılamaması) bir çökme yaşandığında YKE'nin girdiği acil durum modudur. YKE, dış API hataları yüzünden ana sistemi tamamen durdurmak yerine kısıtlı moda geçer. Kasiyerler POS üzerinden satış yapmaya ve FIFO stok düşümlerine devam edebilir, ancak "Otomatik Tedarik Zinciri" e-postaları veya dış ağ gerektiren bildirim gereksinimleri, bağlantı yeniden sağlanana kadar askıya alınır ve kuyruğa atılır.
+5. Bakım ve Güncelleme Durumu (Maintenance Mode): YKE'nin versiyon güncellemeleri, sunucu yamaları veya planlı veritabanı yedeklemeleri sırasında girdiği erişime kapalı durumdur. Bu modda, veri tutarsızlıklarını önlemek amacıyla (özellikle satır bazlı kilitlenen tabloların yedeklenmesi esnasında) Kasiyer ve Yönetici modlarındaki tüm aktif kullanıcı oturumları dondurulur veya sonlandırılır. Sisteme sadece veritabanı yöneticileri ve geliştirici ekip arka plandan erişebilir.
+Gereksinimlerin Durum ve Modlara Göre İşletim İlişkisi
+Bu spesifikasyon belgesinde tanımlanan temel YKE fonksiyonel gereksinimlerinin, yukarıda belirtilen durum ve modlarla olan etkileşimi aşağıdaki matriste gösterilmiştir:
+
+YKE Fonksiyonel Gereksinimleri	Başlatma Durumu	Yönetici Modu	Kasiyer Modu	Kısıtlı Durum (Degraded)	Bakım Durumu
+Kullanıcı Girişi ve RBAC	Pasif	Aktif	Aktif	Aktif	Pasif (Kilitli)
+FIFO Envanter Yönetimi	Pasif	Aktif (Tam Erişim)	Aktif (Sadece Çıkış)	Aktif	Pasif
+POS ve KDV Hesaplamaları	Pasif	Pasif (Yetki Yok)	Aktif	Aktif	Pasif
+Otomatik Tedarik (Mail API)	Pasif	Aktif	Aktif	Pasif (Kuyrukta)	Pasif
+Sadakat Puanı İşlemleri	Pasif	Aktif (Görüntüleme)	Aktif (İşlem)	Aktif	Pasif
+Kâr/Zarar Hesaplama Raporları	Pasif	Aktif	Pasif	Aktif	Pasif
+Audit Log (Denetim İzi) Kaydı	Aktif (Sistem Logu)	Aktif (İzleme/Yazma)	Aktif (Sadece Yazma)	Aktif (Sadece Yazma)	Aktif (Sistem Logu)
+
+
+1.2 YKE Fonksiyonel Gereksinimleri
+Bu bölüm, Smarket yazılım sisteminin gerçekleştirmesi gereken temel işleveleri ve bu işlevlerin çalışma koşullarını tanımlar.
+
+1.2.1 Kullanıcı Kimlik Doğrulama ve Rol Tabanlı Erişim Kontrolü 
+Smarket sistemi iki farklı kullanıcı rolünü desteklemektedir.: Yönetici (Manager) ve Kasiyer (Cashier). Sisteme erişim yalnızca geçerli bir kullanıcı adı ve şifre kombinasyonu ile mümkün olmalıdır.
+SYS-F-001: Sistem kullanıcı oturum açma isteklerini en fazla 3 saniye içinde yanıtlamalıdır.
+SYS-F-002: Yönetici rolündeki kullanıcılar tüm modüllere (personel yönetimi, kampanya tanımlama, finansal raporlar, denetim günlükleri) erişebilmelidir.
+SYS-F-003: Kasiyer rolündeki kullanıcılar yalnızca POS (Satış Noktası) arayüzüne ve kendi profil bilgilerine erişebilmelidir.
+SYS-F-004: Şifreler, veritabanında Bcrypt algoritması ile şifrelenmiş biçimde saklanmalıdır. Düz metin şifre depolama kesinlikle yasaktır.
+SYS-F-005: Oturum açma işlemi başarılı olduğunda, sistem JWT (JSON Web Token) oluşturarak istemciye iletmelidir. Token geçerlilik süresi 8 saat olarak belirlenmiştir.
+
+
+1.2.2 Envanter Yönetimi ve FIFO Motoru
+SMarket sistemi, ürün ve stok yönetimini parti (batch) düzeyinde takip etmeli; stoğun tükenmesini önlemek amacıyla FIFO (İlk Giren İlk Çıkar) algoritmasını uygulamalıdır.
+
+SYS-F-010: Her ürün partisi; parti kimliği, varış tarihi, son kullanma tarihi ve mevcut miktar bilgilerini içermelidir.
+SYS-F-011: Bir satış işlemi gerçekleştiğinde, sistem en eski varış tarihine sahip aktif partiyi otomatik olarak seçmeli ve stoktan düşmelidir.
+SYS-F-012: Mevcut partinin miktarı sıfırlandığında sistem bir sonraki partiye otomatik geçiş yapmalıdır. Eşzamanlı satış işlemlerinde tutarlılığı sağlamak için satır düzeyinde veritabanı kilidi (row-level locking) uygulanmalıdır
+SYS-F-013: Son kullanma tarihi 7 gün veya daha az kalan ürünler, Yönetici arayüzünde sarı uyarı rengiyle, süresi geçmiş ürünler ise kırmızı rengiyle işaretlenmelidir
+SYS-F-014: Yönetici, manuel stok düzeltmesi yapabilmelidir. Bu işlem denetim günlüğüne kayıt edilmelidir.
+SYS-F-015: Stok miktarı belirlenen kritik eşik değerinin altına düştüğünde sistem, tedarikçi bildirim mekanizmasını otomatik tetiklemelidir (bkz. 1.2.4).
+
+
+1.2.3 Satış ve KDV Sistemi
+Kasiyer arayüzü üzerinden yürütülen satış işlemleri; gerçek zamanlı stok düşümü, KDV  hesaplaması ve müşteri puanı entegreasyonunu kapsamalıdır.
+
+SYS-F-020: Sistem, farklı ürün kategorileri için %1, %10 ve %20 olmak üzere üç farklı KDV oranını desteklemelidir. Her ürünün kategorisi, ürün kaydında tanımlı olmalıdır.
+SYS-F-021: İade işlemi gerçekleştirildiğinde sistem, iade edilen ürünü ilgili partiye geri eklemeli ve işlemi ayrı bir iade kaydı olarak günlüğe kaydetmelidir.
+SYS-F-024: POS arayüzü, ürünleri barkod veya isim araması ile bulabilmelidir.
+
+
+1.2.4 Otomatik Tedarik Zinciri ve E-Posta Bildirimi
+Stok seviyeleri kritik eşiğin altına düştüğünde sistem, tedarikçiye otomatik e-posta göndererek sipariş sürecini başlatmalıdır. 
+SYS-F-030: Otomatik sipariş e-postası; ürün adı, tetiklenme zamanı ve sipariş miktarını içermelidir.
+SYS-F-031: E-posta gönderimi başarısız olduğunda sistem, işlemi en fazla 3 kez yeniden denemelidir. Tüm denemeler başarısız olursa durum 'Başarısız Bildirimler' panosuna kaydedilmelidir.
+SYS-F-032: Yönetici her ürün için otomatik sipariş miktarını konfigüre edebilmelidir.
+SYS-F-033: Her tetikleme olayı denetim günlüğüne timestamp bilgisiyle kaydedilmelidir.
+
+
+1.2.5 Müşteri Puan Sistemi
+Müşteriler her satın alma işleminde kazandıkları puanları sonraki işlemlerinde kullanabilmelidir.
+SYS-F-040: Puan biriktirme oranı varsayılan olarak 100 TL harcama için 1 puan şeklinde belirlenmelidir.
+SYS-F-041: Puan bakiyesi, işlem gerçekleştikten sonra en fazla 5 saniye içinde güncellenmelidir.
+SYS-F-042: Yönetici müşterilerin puan geçmişinin kayıtlarına erişebilmelidir.
+
+
+1.2.6 Kar Hesaplama Motoru
+Yönetici Portalı, satış ve maliyet verilerinden yararlanarak net kâr ve dönemsel finansal raporlar üretmelidir.
+
+SYS-F-050: Kâr hesaplaması formülü: Net Kâr = Satış Fiyatı - Maliyet Fiyatı - KDV Tutarı olarak tanımlanmıştır.
+SYS-F-051: Yönetici, günlük, haftalık ve aylık kâr/zarar raporları oluşturabilmelidir.
+SYS-F-052: Raporlar, görsel grafik (Chart.js) ve tablo formatında sunulmalıdır.
+SYS-F-053: Envanter modülünden girilen maliyet fiyatları ile satış modülünden gelen veriler arasındaki tutarsızlıklar günlük çapraz referans raporu ile tespit edilmelidir.
+
+
+
+1.2.7 Sistem Denetim Günlükleri
+Sistem tüm idari değişiklikleri izlenebilir ve değiştirilemez biçimde kayıt altına almalıdır.
+SYS-F-060: Günlük kaydı; 'Kim, Ne Yaptı, Ne Zaman' formatında Yönetici kimliğini, gerçekleştirilen işlemi ve UTC timestamp bilgisini içermelidir.
+SYS-F-061: Günlük kayıtları yalnızca Yönetici rolü tarafından okunabilir; hiçbir kullanıcı tarafından düzenlenemez veya silinemez.
+
+1.3 YKE Dış Arayüz Gereksinimleri
+SMarket Yazılım Konfigürasyon Elemanının (YKE), dış dünyadaki kullanıcılar ve harici yazılım sistemleriyle gerçekleştirdiği tüm veri alışverişi ve entegrasyon gereksinimleri bu bölümde tanımlanmıştır. Sistem temel olarak iki ana harici arayüz üzerinden iletişim kurmaktadır.
+1.3.1 Arayüz Tanımlaması ve Diyagramları
+Sistemin dış varlıklarla olan ilişkileri, iletişim protokolleri ve bu arayüzleri oluşturan elemanların yapısal özellikleri aşağıda belirtilmiştir:
+1. SMarket Kullanıcı Arayüzü (Geliştirilmekte Olan Arayüz):
+•	Arayüz Elemanları: Yönetici rolleri, Kasiyer rolleri ve Web Tarayıcıları.
+•	Mevcut Durum: Önceden belirlenmiş bir yapıya sahip değildir; proje kapsamında ekip tarafından sıfırdan tasarlanıp geliştirilmektedir.
+•	Tanım: Kullanıcıların sistemle etkileşime girdiği, veri okuma ve yazma işlemlerini gerçekleştirdiği web arayüzüdür. Sistemin istemci tarafını temsil eder ve arka uç (backend) servislerine standart HTTP/HTTPS protokolleri üzerinden bağlanır.
+2. Otomatik Tedarik Bildirim Arayüzü (Mevcut/Hazır Arayüz):
+•	Arayüz Elemanları: Nodemailer Kütüphanesi ve Harici SMTP E-posta Sunucusu.
+•	Mevcut Durum: Önceden belirlenmiş endüstri standartlarına (SMTP/TLS) ve arayüz özelliklerine sahiptir. SMarket ekibi tarafından geliştirilmeyecek, sadece YKE içerisine entegrasyonu sağlanacaktır.
+•	Tanım: FIFO algoritmasına bağlı envanter modülü belirli bir eşik değerinin altına düştüğünde, YKE'nin tedarikçilere otomatik sipariş bildirimleri iletmek amacıyla dışarıdaki bir e-posta sunucusuna bağlanmasını sağlayan köprü arayüzüdür.
+Dış Arayüz Fonksiyonel Standartları:
+SYS-INT-001: YKE, Kullanıcı Arayüzü üzerinden gelen (giriş, satış, sorgulama vb.) veri isteklerini RESTful mimari standartlarına uygun olarak JSON formatında almalı ve yanıtlamalıdır. SYS-INT-002: YKE, Otomatik Tedarik Bildirim Arayüzü ile olan iletişimini harici SMTP sunucuları (Port 465 veya 587) üzerinden güvenli şifreleme katmanı (TLS) kullanarak gerçekleştirmelidir.
+
+
+
+SMarket Dış Arayüz İlişki Diyagramı:
+
+
+1.3.2 Otomatik Tedarik Bildirim Arayüzü (Nodemailer API)
+Bu arayüz, SMarket YKE ile harici tedarikçi e-posta sunucuları (SMTP) arasındaki veri aktarımını sağlar. Arayüzün temel tetikleyicisi; envanter tablosunda bir ürünün stok miktarının, belirlenen minimum eşik değerinin altına düşmesidir.
+SYS-INT-001: Arayüz Genel Karakteristiği a. YKE’nin bu arayüze atamak zorunda olduğu öncelik Orta seviyedir. Kasiyerlerin POS işlemlerini yavaşlatmamak adına bu arayüz arka planda asenkron çalıştırılmalıdır. b. Gerçekleştirilecek arayüz tipi; olay tetiklemeli (event-driven), tek yönlü (outbound) veri transferi ve SMTP protokolü üzerinden mesaj iletimidir.
+SYS-INT-002: Veri Elemanı - Sipariş Miktarı c. YKE’nin SMTP sunucusuna sağlamak zorunda olduğu "Sipariş Miktarı" veri elemanının özellikleri aşağıda tanımlanmıştır:
+1.	İsimler/tanımlayıcılar: Doğal dil ismi: Sipariş Miktarı, Teknik isim (Veritabanı değişkeni): order_quantity.
+2.	Veri tipi: Tam sayı (Integer).
+3.	Büyüklük ve format: Maksimum 4 haneli sayısal değer.
+4.	Ölçme birimleri: Adet (Pcs).
+5.	Tanım kümesi: 1 ile 9999 arasındaki erişim kümesi.
+6.	Doğruluk ve duyarlık: Kesin tam sayı (Ondalık basamak içeremez).
+7.	Öncelik, zamanlama, kısıtlamalar: Stok eşiği aşıldığı an oluşturulur. Spam engelleme iş kuralları gereği günlük "rate limit" (gönderim sınırı) kısıtlamasına tabidir.
+8.	Güvenlik ve özel kısıtlamalar: İş mantığı gereği sıfır (0) veya negatif (-) değer alması sistem tarafından engellenmelidir.
+9.	Kaynaklar ve alıcılar: Kaynak: SMarket YKE / Alıcı: Harici SMTP Sunucusu.
+SYS-INT-003: Veri Elemanı - Tedarikçi E-posta Adresi c. YKE’nin SMTP sunucusuna iletmek zorunda olduğu "Tedarikçi E-posta Adresi" veri elemanının özellikleri aşağıda tanımlanmıştır:
+1.	İsimler/tanımlayıcılar: Doğal dil ismi: Tedarikçi E-posta Adresi, Teknik isim: supplierEmail.
+2.	Veri tipi: Alfanümerik (String/Varchar).
+3.	Büyüklük ve format: RFC 5322 standartlarına uygun e-posta formatı. Maksimum 255 karakter uzunluğunda dizgi.
+4.	Ölçme birimleri: Uygulanamaz.
+5.	Tanım kümesi: Veritabanında "aktif" olarak işaretlenmiş geçerli tedarikçi adresleri.
+6.	Doğruluk ve duyarlık: Karakter bazında birebir (%100) doğru eşleşme zorunluluğu.
+7.	Öncelik, zamanlama, kısıtlamalar: Stok eşik tetiklemesi gerçekleştiğinde veritabanından anlık olarak çağrılır.
+8.	Güvenlik ve özel kısıtlamalar: Ağ üzerinden iletimi esnasında TLS standartları ile şifrelenmek zorundadır.
+9.	Kaynaklar ve alıcılar: Kaynak: SMarket YKE Veritabanı / Alıcı: Nodemailer API İstemcisi.
+SYS-INT-004: Veri Eleman Grupları (Mesaj Paketleri) d. YKE’nin harici e-posta sunucusuna iletmek zorunda olduğu veri elemanlarının birleşimiyle oluşan "E-posta Mesaj Paketi (Payload)" özellikleri aşağıda tanımlanmıştır:
+1.	İsimler/tanımlayıcılar: Doğal dil ismi: Otomatik Sipariş E-postası, Teknik isim: OrderMailPayload.
+2.	Grup yapısı: Paket içerisinde; supplierEmail (Alıcı), order_quantity (Miktar), product_name (Ürün Adı) ve timestamp (Tarih) elemanları gruplanmış halde bulunur.
+3.	Ortam ve yapı: Sunucu belleğinde (RAM) dinamik olarak oluşturulan ve JSON mimarisinde tutulan bir veri grubudur.
+4.	Gösterge ve görsel özellikler: Karşı tarafa iletilecek çıktı, SMarket kurumsal kimliğine uygun tasarlanmış, tablo ve logo içeren HTML formatında bir e-posta gövdesidir.
+5.	Grup ilişkileri: Veri grubu, yalnızca envanter modülündeki kritik stok seviyesi uyarısı tetiklendiğinde oluşturulur.
+6.	Kısıtlamalar: İşlemin POS terminalini yavaşlatmaması için mesaj paketleri asenkron (arka planda işlenen) bir mesaj kuyruğuna aktarılarak gönderilir.
+7.	Güvenlik kısıtlamaları: Mesaj paketi içerisinde sistem iç ağ bilgileri veya yönetici giriş şifreleri gibi hassas veriler kesinlikle yer alamaz.
+8.	Kaynak ve alıcılar: Kaynak: SMarket Arka Yüz (Backend) Servisi / Alıcı: Tedarikçi E-posta İstemcisi.
+SYS-INT-005: İletişim Yöntemlerinin Özellikleri e. YKE’nin Nodemailer arayüzü ile iletişim kurarken kullanacağı ağ ve haberleşme özellikleri aşağıda tanımlanmıştır:
+1.	Tanımlayıcı: SMTP İletişim Kanalı.
+2.	Haberleşme ortamı: İnternet (TCP/IP) üzerinden geniş alan ağı (WAN) bağlantısı.
+3.	Mesaj formatlama: İletilen paketler MIME (Multipurpose Internet Mail Extensions) formatına dönüştürülerek ağa verilir.
+4.	Akış kontrolü: Harici sunucunun anlık olarak yanıt vermemesi durumunda asılı kalmayı önlemek için belirli bir zaman aşımı (timeout) süresi sonunda istek iptal edilir.
+5.	Veri aktarım oranı: Periyodik olmayan, tamamen stok azalması olaylarına bağlı anlık veri aktarımıdır.
+6.	Yönlendirme kuralları: DNS üzerinden alıcı e-posta adresinin MX (Mail Exchange) kayıtları çözümlenerek doğru sunucuya yönlendirme yapılır.
+7.	Öncelik ve hizmet: Arka planda çalışan, düşük-orta öncelikli bir veri iletim hizmetidir.
+8.	Emniyet ve gizlilik: Tüm iletişim, veri paketlerinin izinsiz okunmasını engellemek amacıyla TLS (Transport Layer Security) şifrelemesi kullanılarak gerçekleştirilir.
+SYS-INT-006: Protokol Özellikleri f. Yazılım Konfigürasyon Elemanının bu arayüzde kullanmak zorunda olduğu ağ protokolünün teknik standartları aşağıda tanımlanmıştır:
+1.	Tanımlayıcı: SMTP (Simple Mail Transfer Protocol).
+2.	Öncelik: Standart uygulama katmanı (Application Layer) önceliği.
+3.	Paketleme: Veriler, standart TCP paketleri halinde parçalanarak iletilir.
+4.	Hata kontrolü: Sunucudan dönen hata kodlarına (Örn: 4xx, 5xx) veya bağlantı reddine göre sistem işlemi "Başarısız" kabul eder ve bir yeniden deneme (retry) mekanizması işletilir.
+5.	Zaman uyumlama: Bağlantı kurulması için maksimum bekleme (timeout) süresi 15 saniye olarak kısıtlanmıştır.
+6.	Durum raporlama: İletişim protokolünün sonucu (başarılı iletim veya hata), yöneticilerin görebileceği "Sistem Logları" (Audit Log) tablosuna durum kodu ile birlikte yazılır.
+SYS-INT-007: Fiziksel Uyumluluk g. SMarket ERP yazılımı donanımdan bağımsız web tabanlı bir sistem olduğu ve Nodemailer dış arayüzü tamamen yazılımsal (API) bir katman üzerinden çalıştığı için, bu arayüze atanmış herhangi bir fiziksel veya elektriksel uyumluluk kısıtlaması (kablo, fiş boyutu, voltaj vb.) bulunmamaktadır.
+
+1.4 YKE Dahili Arayüz Gereksinimleri
+Bu paragraf, SMarket sistemini oluşturan yazılım bileşenleri arasındaki dahili arayüzleri tanımlamaktadır. Sistem; React.js tabanlı Frontend, Node.js (Express) tabanlı Backend ve PostgreSQL veritabanından oluşmaktadır.
+
+
+1.4.1 Frontend-Backend Arayüzü 
+INT-001: Frontend bileşenleri ile Backend servisleri arasındaki iletişim, RESTful API standartlarına uygun HTTP/HTTPS protokolü aracılığıyla gerçekleştirilmelidir.
+INT-002: Tüm API istekleri ve yanıtları JSON formatında olmalıdır.
+INT-003: Yetkilendirme gerektiren tüm endpoint'lere yapılan isteklerde HTTP Authorization başlığında geçerli bir JWT token bulunmalıdır. Token doğrulama işlemi Backend middleware katmanında gerçekleştirilmelidir
+INT-004: API yanıt süreleri normal işletim koşullarında 500 milisaniyeyi aşmamalıdır.
+INT-005: Backend, aşağıdaki başlıca dahili servis gruplarını sağlamalıdır:
+•	/api/auth  -  Kimlik doğrulama ve oturum yönetimi
+•	/api/products  -  Ürün ve parti CRUD işlemleri
+•	/api/sales  -  Satış ve iade işlemleri
+•	/api/reports  -  Finansal raporlama
+•	/api/logs  -  Denetim günlüğü sorgulama (yalnızca Yönetici)
+
+
+1.4.2 Backend-Veritabanı Arayüzü
+INT-010: Backend servisleri, PostgreSQL veritabanıyla bağlantı havuzu (connection pooling) mekanizması aracılığıyla iletişim kurmalıdır. Maksimum 20 eşzamanlı bağlantı desteklenmelidir.
+INT-011: Eşzamanlı satış işlemlerinde veri bütünlüğünü sağlamak amacıyla FIFO stok seçim sorgularında satır düzeyinde kilit kullanılmalıdır.
+INT-012: Puan işlemleri, satış güncellemeleri ve stok düşümü gibi birbiriyle ilişkili işlemler atomik veritabanı transaction'ları içinde gerçekleştirilmelidir. Herhangi bir adımın başarısız olması durumunda tüm işlem geri alınmalıdır (rollback).
+
+INT-013: Veritabanı şemasında aşağıdaki başlıca tablo grupları yer almalıdır:
+•	users, roles  -  Kullanıcı ve yetki yönetimi
+•	products, batches  -  Ürün ve parti takibi (FIFO)
+•	sales, sale_items, returns  -  Satış ve iade kayıtları
+•	customers, loyalty_points  -  Müşteri ve puan yönetimi
+•	audit_logs  -  Denetim günlükleri
+•	supply_notifications  -  Tedarik bildirimleri
+
+
+
+1.4.3 Backend – E-Posta Servisi Arayüzü 
+
+INT-020: E-posta gönderim işlemleri, ana uygulama akışını bloke etmemek amacıyla asenkron kuyruk mimarisine dayalı biçimde gerçekleştirilmelidir.
+INT-021: E-posta servisi; ürün adı, sipariş miktarı ve tetikleme zamanı bilgilerini içeren yapılandırılmış bir nesne şeklinde parametreler almalıdır.
+INT-022: E-posta gönderim sonuçları (başarılı/başarısız), supply_notifications tablosuna yazılmalıdır.
+
+
+
+1.5 YKE Dahili Veri Gereksinimleri
+
+1.5.1 Kullanıcı ve Yetki Verileri
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+user_id	UUID	PK, NOT NULL	Benzersiz kullanıcı kimliği
+username	VARCHAR(50)	UNIQUE, NOT NULL	Oturum açma kullanıcı adı
+password_hash	VARCHAR(255)	NOT NULL	Bcrypt ile şifrelenmiş parola
+role	ENUM	NOT NULL	'manager' veya 'cashier' değeri alır
+is_active	BOOLEAN	DEFAULT TRUE	Hesap aktiflik durumu
+created_at
+	TIMESTAMP	NOT NULL	UTC formatında kayıt oluşturma zamanı
+full_name	VARCHAR(100)	NOT NULL	Personelin adı ve soyadı
+salary	NUMERIC(10,2)	NOT NULL	Personel maaş bilgisi
+
+
+1.5.2 Ürün ve Parti Verileri
+
+Ürün kataloğu (products) ile parti takibi (batches) iki ayrı tablo olarak tutulur. Bir ürüne ait birden fazla parti bulunabilir; FIFO sıralaması parti düzeyinde uygulanır.
+
+Tablo: products
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+product_id	UUID	PK, NOT NULL	Benzersiz ürün kimliği
+name	VARCHAR(150)	NOT NULL	Ürün adı; POS aramasında kullanılır
+barcode	VARCHAR(50)	UNIQUE, NOT NULL	Barkod numarası; POS tarama ile eşleştirilir
+category	VARCHAR(50)	NOT NULL	KDV oranı belirlemede kullanılan ürün kategorisi
+vat_rate	NUMERIC(4,2)	CHECK IN (1,10,20)	Ürüne uygulanan KDV oranı (%1, %10, %20)
+sale_price	NUMERIC(10,2)	NOT NULL	Güncel satış fiyatı; kâr hesaplamasında kullanılır
+reorder_qty	INTEGER	NOT NULL	Otomatik sipariş önerilen miktar
+is_active	BOOLEAN	DEFAULT TRUE	Ürün aktiflik durumu (soft delete)
+
+
+Tablo:batches
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+batch_id	UUID	PK, NOT NULL	Parti benzersiz kimliği
+product_id	UUID	FK → products	İlgili ürüne dış anahtar
+arrival_date	DATE	NOT NULL	FIFO sıralamasının temeli; en küçük değer önce seçilir
+expiry_date	DATE	NULL	Son kullanma tarihi; <= 7 gün ise sarı, geçmişse kırmızı uyarı
+quantity	INTEGER	CHECK >= 0	Mevcut stok miktarı; negatif olamaz
+cost_price	NUMERIC(10,2)	NOT NULL	Parti bazlı maliyet fiyatı; aynı ürün farklı maliyetle gelebilir
+threshold	INTEGER	NOT NULL	Bu parti için otomatik sipariş eşik değeri
+
+
+1.5.3 Satış Başlığı ve Satış Kalem Verileri
+Bir satış işlemi iki kademeli yapıda tutulur: sales tablosu fişin genel bilgilerini (toplam tutar, kasiyer, zaman), sale_items tablosu ise fişin her bir ürün kalemini (hangi parti, kaç adet, hangi fiyat) saklar. Bu yapı hem FIFO parti takibini hem de ürün bazlı iade işlemlerini mümkün kılar.
+
+Tablo: sales
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+sale_id	UUID	PK, NOT NULL	Benzersiz satış (fiş) kimliği
+cashier_id	UUID	FK → users	İşlemi yapan kasiyer kullanıcısı
+customer_id	UUID	FK, NULL	Sadakat puan işlemi için müşteri; anonim satışlarda NULL
+total_amount	NUMERIC(12,2)	NOT NULL	KDV dahil toplam satış tutarı
+vat_amount	NUMERIC(10,2)	NOT NULL	Uygulanan toplam KDV tutarı
+points_used	INTEGER	DEFAULT 0	Bu işlemde kullanılan sadakat puanı
+sale_time	TIMESTAMP	NOT NULL	UTC formatında satış gerçekleşme zamanı
+
+
+Tablo: sale_items
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+item_id	UUID	PK, NOT NULL	Benzersiz kalem kimliği
+sale_id	UUID	FK → sales	Ait olduğu satış fişine dış anahtar
+batch_id	UUID	FK → batches	FIFO ile seçilen parti; stok düşümünde kullanılır
+quantity	INTEGER	CHECK > 0	Bu kalemde satılan ürün adedi
+unit_price	NUMERIC(10,2)	NOT NULL	Satış anındaki birim fiyat (geçmiş fiyat değişikliğinden etkilenmez)
+vat_rate	NUMERIC(4,2)	NOT NULL	Satış anındaki KDV oranı
+is_returned	BOOLEAN	DEFAULT FALSE	Kalem bazlı iade durumu; kısmi iade desteği sağlar
+
+
+
+1.5.4 Denetim Günlüğü Verileri
+
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+log_id	BIGSERIAL	PK, NOT NULL	Sıralı günlük kaydı kimliği
+user_id	UUID	FK → users	İşlemi gerçekleştiren kullanıcı
+action_type	VARCHAR(100)	NOT NULL	Örn: PRICE_CHANGE, STOCK_OVERRIDE, SALARY_UPDATE
+table_affected	VARCHAR(50)	NOT NULL	Değiştirilen tablonun adı
+old_value	JSONB	NULL	Değişiklik öncesi değer; esnek yapı farklı modülleri destekler
+new_value	JSONB	NULL	Değişiklik sonrası değer
+timestamp	TIMESTAMP	NOT NULL	UTC formatında işlem zamanı
+
+
+1.5.5 Tedarik Bildirimi Verileri 
+Bu tablo, otomatik tedarikçi e-posta bildirimlerinin her tetikleme olayını kayıt altına alır. Başarısız gönderimlerin takibini ve Yönetici panosundaki 'Başarısız Bildirimler' görünümünü destekler.
+
+Alan Adı	Veri Tipi	Kısıt	Açıklama
+notification_id	UUID	PK, NOT NULL	Benzersiz bildirim kaydı kimliği
+product_id	UUID	FK → products	Eşiği aşan ürün
+triggered_at	TIMESTAMP	NOT NULL	UTC formatında tetikleme zamanı
+current_stock	INTEGER	NOT NULL	Tetikleme anındaki stok miktarı
+ordered_qty	INTEGER	NOT NULL	E-postada bildirilen önerilen sipariş miktarı
+status	ENUM	NOT NULL	'sent', 'failed', 'pending' değerlerinden birini alır
+retry_count	SMALLINT	DEFAULT 0	Yeniden deneme sayısı; maksimum 3 denemeye izin verilir
+error_message	TEXT	NULL	Gönderim başarısız olduğunda hata detayı
+
+1.6 Uyarlama Gereksinimleri
+SMarket sistemi, farklı perakende şubelerinde çalışabilmesi ve değişen ticari/yasal koşullara kaynak kodunda değişiklik yapılmadan adapte olabilmesi için çeşitli uyarlama gereksinimlerini karşılamalıdır. Bu uyarlamalar, sisteme özgü kurulum sabitleri ve dinamik operasyonel parametreler olmak üzere iki grupta incelenmektedir.
+
+Yüklemeye Bağımlı Veriler (Kurulum Parametreleri) Sistemin kurulduğu fiziksel markete veya kasaya özgü olarak yalnızca kurulum aşamasında tanımlanan sabit verilerdir:
+SYS-ADP-001: Sistem, satış ekranında oluşturulan elektronik fişlerde ve finansal raporlarda gösterilmek üzere her kurulum noktası için özelleştirilebilir "Şube Adı" ve "Lokasyon Bilgisi" parametrelerini desteklemelidir. SYS-ADP-002: Satışların ve sistem içi denetim izlerinin (Audit Log) tam olarak hangi kasadan yapıldığının takip edilebilmesi için, yazılımın kurulduğu her bir cihaza benzersiz bir "Terminal ID" atanabilmelidir. SYS-ADP-003: Sistemin uluslararası veya farklı bölgesel pazarlarda kullanılabilme ihtimaline karşı varsayılan para birimi ve yerel zaman dilimi ayarları kurulum aşamasında konfigüre edilebilir olmalıdır.
+
+İşletimsel Parametreler (Dinamik Değişkenler) Yöneticiler tarafından işletimsel ihtiyaçlara, devlet politikalarına veya dönemsel kampanyalara göre arayüz üzerinden istenildiği an değiştirilebilen sistem parametreleridir:
+SYS-ADP-004: Farklı ürün kategorileri için uygulanan KDV oranları, olası yasal mevzuat değişikliklerine karşı doğrudan yönetici arayüzü üzerinden dinamik olarak güncellenebilir olmalıdır. SYS-ADP-005: Tedarikçilere dış arayüz üzerinden otomatik sipariş e-postası gönderilmesini tetikleyen minimum stok eşik değerleri, her ürün veya ürün partisi için yönetici tarafından ayrı ayrı belirlenebilir olmalıdır. SYS-ADP-006: Müşterilerin alışverişlerinden kazanacağı sadakat puanlarının harcama karşılığı ve kazanım oranları, yönetici paneli üzerinden özel kampanya dönemlerine göre esnek bir şekilde uyarlanabilmelidir.
+
+1.7 Emniyet Gereksinimleri
+SMarket sistemi, ticari işlemleri ve tedarik zincirini yöneten web tabanlı bir ERP çözümü olduğundan; bu kapsamdaki emniyet gereksinimleri, işletmeyi büyük finansal zararlara sokabilecek kullanıcı hatalarını (kazara yapılan işlemler), otomasyon arızalarını ve kritik veri kayıplarını önlemeye yönelik yazılımsal tedbirleri içermektedir.
+
+Yazılım Konfigürasyon Elemanının (YKE) sağlaması gereken temel emniyet mekanizmaları aşağıda tanımlanmıştır:
+SYS-S-001 (Eşzamanlı İşlem Emniyeti): Sistem, FIFO envanter çıkışlarında birden fazla kasiyerin aynı anda son kalan ürünü satmaya çalışması durumunda oluşabilecek "Race Condition" (Yarış Durumu) ve negatif stok hatalarını önlemek için, veritabanında satır düzeyinde kilitleme (row-level locking) mekanizmasını zorunlu olarak işletmelidir. 
+SYS-S-002 (Otomasyon ve Spam Emniyeti): Stokların belirlenen eşiğin altına düşmesiyle tetiklenen otomatik tedarik zinciri modülü; olası bir döngü hatası (loop) veya veri tutarsızlığı nedeniyle tedarikçilere art arda binlerce hatalı sipariş e-postası göndererek işletmeyi haksız borçlandırmasını engellemek amacıyla, Nodemailer arayüzünde katı bir günlük gönderim limitine (rate limit) tabi tutulmalıdır. 
+SYS-S-003 (Kritik Veri Kaybı Emniyeti): Yönetici arayüzünde yaşanabilecek "kazara silme" vakalarını (örneğin bütün bir ürün grubunu, kampanya ayarlarını veya personel maaş kaydını yanlışlıkla silme) engellemek adına; sistemde kalıcı silme işlemi (Hard Delete) yerine veriyi yalnızca arayüzden gizleyen "Soft Delete" mantığı çalışmalı ve yüksek riskli işlemlerde mutlaka ek şifre teyidi istenmelidir. 
+SYS-S-004 (Kasiyer Giriş Emniyeti): Satış ekranında (POS) barkod okuyucu takılması veya klavye hatası nedeniyle kazara aşırı miktarda ürün girilmesini engellemek için; rutin dışı yüksek hacimli işlemlerde (Örn: Bir üründen tek seferde 100 adet eklenmesi) sistem otomatik olarak işlemi durdurmalı ve ekranda belirgin bir "İşlemi Onaylıyor musunuz?" emniyet uyarısı çıkarmalıdır.
+
+1.8 Güvenlik ve Gizlilik Gereksinimleri
+SMarket sistemi; finansal işlemleri, personel özlük haklarını (maaş, vardiya) ve müşteri sadakat programı verilerini işleyen web tabanlı bir ERP çözümü olduğundan, veri sızıntılarına ve iç istismara karşı en üst düzey güvenlik mimarisiyle donatılmalıdır. Sistemin çalışacağı güvenlik ortamı, karşı koyması gereken siber riskler ve uyması gereken gizlilik politikaları doğrultusunda belirlenen gereksinimler aşağıda sınıflandırılmıştır.
+Kimlik Doğrulama ve Oturum Güvenliği Sisteme yapılacak tüm yetkisiz giriş denemelerini engellemek üzere tasarlanan güvenlik mekanizmalarıdır:
+SEC-001: Sisteme kaydedilen tüm kullanıcı (Yönetici ve Kasiyer) şifreleri veritabanına düz metin olarak kaydedilemez; mutlaka Bcrypt kütüphanesi kullanılarak geri döndürülemez bir şekilde (hash ve salt mantığıyla) şifrelenerek depolanmalıdır. 
+SEC-002: Kullanıcı girişleri ve oturum kontrolleri JWT standardı ile sağlanmalı ve açık bırakılan POS terminallerinden yapılabilecek yetkisiz işlemleri engellemek amacıyla, 15 dakika boyunca işlem yapılmayan oturumlar güvenlik sebebiyle otomatik olarak sonlandırılmalıdır. 
+SEC-003: Sistemin tüm web formları ve veri giriş alanları; SQL Enjeksiyonu (SQLi) ve Siteler Arası Betik Çalıştırma (XSS) gibi yaygın siber saldırı risklerini azaltmak amacıyla katı bir girdi doğrulama (input validation) ve temizleme filtresinden geçirilmelidir.
+Erişim Kontrolü ve İç İstismar (Fraud) Koruması Sistem içindeki kullanıcıların yetkilerini aşmasını ve finansal verileri manipüle etmesini önleyecek kısıtlamalardır:
+SEC-004: Sistem, "En Az Ayrıcalık Prensibi" (Principle of Least Privilege) üzerine kurulmalıdır. Kasiyer rolündeki kullanıcıların, yöneticilere ait finansal raporlara ve personellerin gizli maaş bilgilerine erişimleri mimari seviyede (Route ve API düzeyinde) kesin olarak engellenmelidir. 
+SEC-005: Kasiyerlerin haksız yere sadakat puanı kazanmasını veya aynı puanı birden fazla kez harcamasını (Double-spending) önlemek için, tüm puan işlemleri doğrudan benzersiz satış ID'leri ile kriptografik olarak ilişkilendirilmeli ve doğrulanmalıdır. 
+SEC-006: Sistem içi hesap verilebilirliği sağlamak adına; fiyat güncellemeleri, manuel stok overrides işlemleri ve maaş değişiklikleri gibi tüm kritik idari faaliyetler değiştirilemez bir Audit Log (Denetim İzi) tablosuna kaydedilmelidir. Bu kayıtlarda işlemi yapan kişi, tarih/saat ve işlem detayı eksiksiz yer almalıdır.
+
+Gizlilik Politikası ve Ağ Güvenliği Verilerin ağ üzerindeki dolaşımı ve yasal gizlilik standartlarına uyumluluğu kapsayan gereksinimlerdir:
+SEC-007: Sistem; müşteri iletişim bilgileri ve personel özlük dosyaları gibi hassas verileri işlediği için KVKK prensiplerine uygun olarak tasarlanmalıdır. Veritabanı yöneticileri dahi şifrelenmiş kritik kişisel verilere doğrudan erişim sağlayamamalıdır. 
+SEC-008: Tüm istemci (kullanıcı tarayıcısı) ve sunucu haberleşmesi ile dış servislere (Nodemailer API) giden giden veri paketleri, ağ trafiğinin dışarıdan dinlenmesini (Man-in-the-Middle) engellemek amacıyla uçtan uca şifrelenmiş TLS 1.2 veya üzeri (HTTPS) protokolleri üzerinden gerçekleştirilmelidir.
+
+
+1.9 YKE Ortam Gereksinimleri
+SMarket sistemi, çapraz platform destekli web tabanlı bir ERP çözümü olarak tasarlandığı için, yazılımın çalışacağı ortamlar "İstemci (Kullanıcı)" ve "Sunucu (Barındırma)" olmak üzere iki ayrı ekosistemde değerlendirilmektedir. Yazılım Konfigürasyon Elemanının (YKE) eksiksiz çalışabilmesi için gereken işletim ortamı standartları aşağıda tanımlanmıştır:
+ENV-001 (İstemci İşletim Ortamı): Sistem ön yüzü (Kasiyer ve Yönetici portalları) tamamen platform bağımsız bir mimaride geliştirildiğinden; kullanıcı tarafında Windows, macOS, Linux, iOS veya Android gibi belirli bir işletim sistemine zorunlu bağımlılık bulunmamaktadır. 
+ENV-002 (İstemci Yazılım Ortamı): YKE'nin kullanıcı cihazlarında çalışabilmesi için cihaza özel herhangi bir masaüstü yazılımı veya eklenti kurulmasına gerek yoktur. Güncel web standartlarını destekleyen modern bir internet tarayıcısı (Google Chrome, Mozilla Firefox, Apple Safari veya Microsoft Edge) sistemin çalışması için gerekli ve yeterli ortamı sağlar. 
+ENV-003 (Sunucu İşletim Ortamı): Sistemin arka yüz iş mantığını yürüten API servisleri (Node.js) ve ilişkisel veritabanı yönetim sistemi (PostgreSQL); 7/24 kesintisiz operasyon esasına uygun, kararlı bir sunucu işletim sistemi (tercihen Ubuntu/Debian türevi bir Linux dağıtımı veya Windows Server) ortamında barındırılmalıdır. 
+ENV-004 (Ağ ve Güvenlik Ortamı): YKE'nin istemci cihazlarla sunucu arasında anlık veri senkronizasyonu yapabilmesi ve dış arayüzlere (Nodemailer) erişebilmesi için, kurulduğu ortamın standart web trafiğine (HTTPS port 443) ve güvenli e-posta çıkışına (SMTP port 587/465) izin veren, güvenlik duvarı (Firewall) ile korunan bir ağ altyapısına sahip olması zorunludur.
+
+1.10 Bilgisayar Kaynak Gereksinimleri
+SMarket sisteminin yüksek performansta ve kesintisiz çalışabilmesi için istemci ve sunucu taraflarında ihtiyaç duyulan donanım, yazılım ve iletişim kaynakları bu bölümde tanımlanmıştır.
+1.10.1 Bilgisayar Donanım Gereksinimleri
+Sistemin kurulumu ve operasyonel kullanımı için gereken fiziksel teçhizat gereksinimleri aşağıda belirtilmiştir:
+SYS-RES-001: Sunucu donanımı olarak; arka plan servislerini (Node.js) ve veritabanını (PostgreSQL) barındırmak üzere minimum 4 çekirdekli işlemci (CPU), 8 GB bellek (RAM) ve 100 GB SSD depolama alanına sahip bulut tabanlı bir sunucu (VPS) kullanılmalıdır.
+SYS-RES-002: İstemci (Kasiyer ve Yönetici) donanımı olarak; modern bir internet tarayıcısını çalıştırabilecek kapasitede, minimum 2 GB RAM'e sahip standart ofis bilgisayarları, dizüstü bilgisayarlar veya POS operasyonları için dokunmatik tabletler kullanılmalıdır.
+SYS-RES-003: Ağ teçhizatı olarak; istemci cihazların sunucuya kesintisiz ve düşük gecikmeli erişimini sağlayacak, anlık veri senkronizasyonunu kaldırabilecek standart genişbant yönlendirici (router) cihazları kullanılmalıdır.
+1.10.2 Bilgisayar Donanımı Kaynak Kullanımı Gereksinimleri
+Sistemin darboğaza girmeden 7/24 hizmet verebilmesi için sunucu donanım kaynaklarının kullanım sınırları aşağıda tanımlanmıştır:
+SYS-RES-004: Sunucu işlemci (CPU) kapasitesi; FIFO stok düşümü, KDV hesaplamaları ve eşzamanlı satış işlemleri sırasında sistemin yavaşlamaması için maksimum %70 kullanım oranını aşmamalıdır.
+SYS-RES-005: Sunucu bellek (RAM) kapasitesi; PostgreSQL veritabanı önbelleklemesi ve Node.js istek yönetimi süreçlerinde güvenli sınır olan %80 kullanım oranını geçmemeli, geçmesi durumunda sistem otomatik bir uyarı üretmelidir.
+SYS-RES-006: Yardımcı saklama (Disk) cihazı kapasitesi; sürekli veri üreten Audit Log (Denetim İzi) kayıtlarının depolama alanını tamamen tüketmesini önlemek için disk doluluk oranı %85'e ulaştığında log rotasyonu (eski kayıtların sıkıştırılıp arşivlenmesi) devreye girmelidir.
+1.10.3 Bilgisayar Yazılım Gereksinimleri
+SMarket Yazılım Konfigürasyon Elemanı'nın (YKE) geliştirilmesi ve çalıştırılması için kullanılacak yazılım altyapıları aşağıda belirtilmiştir:
+SYS-RES-007: Sunucu işletim sistemi olarak; 7/24 operasyon esasına uygun, kararlı bir Linux dağıtımı (örneğin Ubuntu 22.04 LTS) veya muadili bir Windows Server sürümü kullanılmalıdır.
+SYS-RES-008: Arka yüz (Backend) servislerini ve kimlik doğrulama katmanını (Express aracıyla) çalıştırmak için Node.js ortamı kullanılmalıdır.
+SYS-RES-009: Sistemin veri depolama, satır bazlı kilitleme (row-level locking) ve ilişkisel sorgu işlemlerini yürütmek için PostgreSQL Veri Tabanı Yönetim Sistemi kullanılmalıdır.
+SYS-RES-010: Kullanıcı arayüzlerinin (Frontend) ve yüksek hızlı Dashboard ekranlarının geliştirilmesi için React.js / Next.js çerçeveleri kullanılmalıdır.
+SYS-RES-011: Otomatik tedarik zinciri kapsamında dış tedarikçilere gönderilecek e-postaların tetiklenmesi için Nodemailer API kütüphanesi sisteme entegre edilmelidir.
+1.10.4 Bilgisayar İletişim Gereksinimleri
+Sistemin ağ topolojisi, veri transfer özellikleri ve iletişim sınırları aşağıda tanımlanmıştır:
+SYS-RES-012: Ağ topolojisi ve iletim teknikleri kapsamında; istemci ile sunucu arasındaki tüm veri transferi İstemci-Sunucu (Client-Server) mimarisinde, RESTful API standartlarına uygun olarak JSON formatında gerçekleştirilmelidir.
+SYS-RES-013: Ağ geçitleri (Gateways) yapılandırmasında; Otomatik Tedarik modülünün (Nodemailer) harici SMTP sunucularına e-posta gönderebilmesi için sunucu güvenlik duvarında ilgili portlara (465 veya 587) izin verilmelidir.
+SYS-RES-014: Zaman sınırları ve tepki süresi (latency) kapsamında; kasiyer terminalindeki kasa kuyruklarını engellemek amacıyla, barkod okutma, KDV hesaplama ve stok düşümü gibi kritik POS işlemlerinde sunucudan yanıt alma süresi maksimum 500 milisaniye ile sınırlandırılmalıdır.
+SYS-RES-015: Veri transfer oranı kapsamında; sistemdeki anlık API istekleri metin tabanlı (JSON) olduğu için ağ paket boyutları çok düşük tutulmalı ve standart bir 4G/5G mobil bağlantı veya genişbant internet ile sorunsuz çalışabilmelidir.
+
+1.11 Yazılım Kalite Faktörleri
+SMarket sisteminin operasyonel verimliliğini, güvenilirliğini ve sürdürülebilirliğini garanti altına almak amacıyla karşılaması gereken yazılım kalite faktörleri aşağıda tanımlanmıştır:
+SYS-Q-001 (Güvenilirlik ve Doğruluk - Reliability): KDV hesaplama algoritmaları, kâr/zarar veri analizleri ve FIFO bazlı stok düşüm motoru sıfır hata toleransıyla çalışmalı; eşzamanlı işlemlerde dahi veri tutarsızlığı yaşanmadan %100 doğru sonuçlar üretmelidir.
+SYS-Q-002 (Kullanılabilirlik - Usability): Sistemin ön yüzü (özellikle yoğun işlem yapılan Kasiyer POS portalı), personelin ileri düzey teknik eğitim almasına gerek kalmadan, temel bilgisayar okuryazarlığı ile kısa sürede öğrenebileceği kadar sezgisel ve temiz bir arayüze sahip olmalıdır.
+SYS-Q-003 (Erişilebilirlik - Availability): SMarket uygulaması, modern mağazacılığın gerektirdiği esneklik doğrultusunda bulut sunucu mimarisi üzerinde barındırılmalı ve vardiyalı perakende operasyonlarının aksamaması için 7/24 (maksimum kesintisiz çalışma zamanı hedefiyle) erişilebilir olmalıdır.
+SYS-Q-004 (İdame Edilebilirlik - Maintainability): Sistemin kaynak kodları, ileride ortaya çıkabilecek hata düzeltmelerinin (bug fix) ve yeni özellik eklemelerinin kolayca yapılabilmesi için modüler yapıda geliştirilmeli ve temiz kod (clean code) prensiplerine uygun olmalıdır.
+SYS-Q-005 (Esneklik ve Taşınabilirlik - Portability): Uygulama arayüzleri belirli bir donanıma bağlı kalmaksızın web platformunda geliştirildiği için; Windows, Linux, macOS veya tablet işletim sistemlerinden bağımsız olarak tüm güncel web tarayıcılarında aynı işlevsellikle kullanılabilmelidir.
+1.12 Tasarım ve Uygulama Kısıtlamaları
+SMarket projesinin geliştirilmesi, mimari tasarımı ve proje yönetimi aşamalarında ekibin uymakla yükümlü olduğu teknik, metodolojik ve donanımsal kısıtlamalar aşağıda belirtilmiştir:
+SYS-C-001 (Teknoloji Yığını ve Dil Kısıtlamaları): Projenin hiçbir modülünde alternatif dil ve çerçeveler kullanılamaz; sistem arayüzleri kesin olarak React.js/Next.js , arka plan (Backend) servisleri Node.js ve ilişkisel veri yönetimi PostgreSQL teknolojileri ile gerçekleştirilmelidir.
+SYS-C-002 (Proje Yönetim ve Süreç Kısıtlamaları): Yazılım geliştirme yaşam döngüsü şelale (Waterfall) modeli ile değil, kesin olarak Scrum çevik (Agile) metodolojisi çerçevesinde yürütülmeli; tüm geliştirme süreci her biri 2 hafta süren toplam 5 Sprint (Koşu) şeklinde yönetilmelidir.
+SYS-C-003 (Dış Bileşen ve Entegrasyon Kısıtlamaları): Sistemin tedarik zinciri otomasyonu kapsamında e-posta gönderimi için sıfırdan bir SMTP modülü yazılmayacak; bu işlem için ticari standartlarda hazır bir paket olan Nodemailer kütüphanesi entegre edilecektir.
+SYS-C-004 (Sürüm Kontrol Kısıtlaması): Geliştirici ekibin eşzamanlı çalışabilmesi, kod çakışmalarının önlenmesi ve proje geçmişinin kayıt altına alınması amacıyla tüm kaynak kodlar Git versiyon kontrol sistemi ile GitHub platformu üzerinde barındırılmak zorundadır.
+SYS-C-005 (Genişleyebilirlik Kısıtlaması): Sistemin veritabanı şemaları (özellikle ürün, parti ve kullanıcı tabloları), işletmenin gelecekteki büyüme potansiyeli göz önünde bulundurularak; yeni şubelerin, ek kullanıcı rollerinin veya gelişmiş finansal veri analizlerinin sisteme kolayca entegre edilebileceği kadar esnek tasarlanmalıdır.
+
+1.15 Lojistikle İlgili Gereksinimler
+SMarket sisteminin canlı ortama alınması, operasyonel sürekliliğinin sağlanması ve bakım süreçlerinin yönetilmesi için gerekli olan lojistik hususlar aşağıda tanımlanmıştır:
+LOG-001 (Sistem Barındırma ve Taşınabilirlik): Sistem, donanım arızalarına karşı esneklik sağlamak amacıyla fiziksel bir yerel sunucu yerine ölçeklenebilir bir bulut (Cloud/VPS) ortamında barındırılmalı ve gerektiğinde verilerin farklı bir sunucuya kolayca taşınabilmesi için standart dışa aktarım (dump) formatlarını desteklemelidir.
+LOG-002 (Bakım ve Yazılım Desteği): Projenin canlıya alınmasından sonra sistemde ortaya çıkabilecek olası mantıksal hataların (bug) giderilmesi, veritabanı yedeklemelerinin kontrolü ve sunucu işletim sistemi güncellemeleri, belirlenen garanti/destek süresi boyunca geliştirici ekip tarafından sağlanmalıdır.
+LOG-003 (Mevcut Tesis ve Teçhizat Etkisi): Yazılım tamamen web tabanlı (tarayıcı üzerinden çalışan) bir mimaride tasarlandığı için şubelerdeki mevcut donanımların (PC, barkod okuyucu) değiştirilmesine gerek yoktur; sisteme geçiş aşamasında mağazaların fiziksel tesis altyapısında herhangi bir tadilat veya lojistik değişiklik yapılmayacaktır.
+1.16 Diğer Gereksinimler
+SMarket sisteminin daha önceki bölümlerde sınıflandırılmamış olan, projeye özgü ek gereksinimleri aşağıda tanımlanmıştır:
+OTH-001 (Yerelleştirme ve Dil Altyapısı): Sistem arayüzü varsayılan olarak Türkçe dilinde çalışacak şekilde tasarlanmalı; ancak işletmenin gelecekteki şubeleşme potansiyeli göz önünde bulundurularak sistemdeki statik metinler koda gömülmek (hardcoded) yerine, daha sonra farklı dillerin kolayca eklenebileceği bir yapı (i18n standartları) ile entegre edilmelidir.
+1.17 Ambalajlama Gereksinimleri
+Yazılım Konfigürasyon Elemanının (YKE) nihai teslimatı için belirlenen dijital ambalajlama, etiketleme ve sunum formatları aşağıda tanımlanmıştır:
+PKG-001 (Kaynak Kod Teslimatı): Sistemin kararlı son sürümüne (Release) ait Ön Yüz (React), Arka Yüz (Node.js) kaynak kodları ile PostgreSQL veritabanı kurulum scriptleri (SQL Dump), sürüm numarası ile etiketlenmiş güvenli bir ZIP arşivi formatında veya yetkilendirilmiş özel (private) bir Git deposu üzerinden dijital olarak teslim edilmelidir.
+PKG-002 (Dokümantasyon Paketlemesi): Yazılım Geliştirme Yaşam Döngüsü (SDLC) boyunca hazırlanan tüm mühendislik belgeleri (SPMP, SRS, SDD, STD) ve sistem kurulumunu anlatan yönetici kılavuzları, üzerinde proje adı ve versiyon numarası (Örn: SMarket_V1.0_Teknik_Dokumanlar) yazan standart PDF formatında dijital bir klasör olarak paketlenmelidir.
+
+1.18 Gereksinimlerin Önceliği ve Kritikliği
+
+Bu paragraf, SMarket sistemine ait gereksinimlerin görece önem derecesini, öncelik sırasını ve kritiklik düzeyini açıklamaktadır. 
+
+
+Öncelik	Gereksinim	İlgili Bölüm	Kritiklik Gerekçesi
+KRİTİK	Kullanıcı Kimlik Doğrulama ve RBAC	1.2.1	Yetkisiz erişim tüm sistemi tehlikeye atar; ilk sprint'te tamamlanmalıdır.
+KRİTİK	FIFO Envanter Motoru	1.2.2	Eşzamanlı satışlarda veri bütünlüğü için zorunludur.
+KRİTİK	Satış ve KDV Hesaplama	1.2.3	Yasal uyumluluk gerektirir; mali yanlışlıklar iş riskine yol açar.
+KRİTİK	Denetim Günlükleri (Değiştirilemez)	1.2.7, 1.5.4	Kayıt silme veya değiştirmeye karşı korunmalıdır; iç dolandırıcılığı engeller.
+YÜKSEK	Otomatik Tedarik ve E-Posta Bildirimi	1.2.4	Stok tükenmesini önler; iş sürekliliği açısından kritik eğilimde.
+YÜKSEK	Kâr Hesaplama Motoru	1.2.6	Finansal karar alma için gereklidir; iş mantığı karmaşıklık içerir.
+ORTA	Müşteri Sadakat Puan Sistemi	1.2.5	Puan çifte kullanımını engellemek için dikkatli tasarım gerektirir.
+ORTA	Dahili Veri Bütünlüğü Kısıtlamaları	1.5.5	Çift katmanlı doğrulama ile veri kalitesi güvence altına alınmalıdır.
+DÜŞÜK	Gelişmiş Raporlama & Grafik Gösterimi	1.2.6	İşlevsellik zaten karşılanmıştır; görsel zenginleştirme son sprint'e bırakılabilir.
+
+
+1.18.1 Kritik Gereksinimler-Güvenlik ve Gizlilik
+Aşağıdaki gereksinimler güvenlik,emniyet veya gizlilik açısından kritik kabul edilmekte olup özel işlem gerektirir.
+Kritik-GV-001(SYS-F-004): Şifrelerin Bcrypt ile saklanması. İhlali durumunda tüm kullanıcı hesapları tehlikeye girer.
+Kritik-GV-002 (SYS-F-060/061): Denetim günlüğü değişmezliği. İhlali iç dolandırıcılığı gizlemeye olanak tanır
+Kritik-GV-003 (SYS-F-002/003): Rol tabanlı erişim zorunluluğu. Kasiyer yetkisiyle yönetici verilerine erişilmesi kabul edilemez bir güvenlik açığıdır.
+
+1.18.2 Gereksinimlerin Eşit Ağırlık Durumu
+İşlevsel olmayan gereksinimler (performans metrikleri, API yanıt süreleri, veritabanı bağlantı havuzu sınırları) genel sistem güvenilirliği açısından eşit ağırlığa sahiptir ve herhangi bir önceliklendirme yapılmamıştır. Bu gereksinimler sprint 1'den itibaren sürekli olarak izlenmelidir.

@@ -1,0 +1,425 @@
+Kapsam
+1.1 Tanım Bu doküman, kısa adı "SMarket" olan "Web Tabanlı Perakende Yönetim ve Kurumsal Kaynak Planlama (ERP) Sistemi" projesi için hazırlanmış Yazılım Tasarım Dokümanı'dır (Software Design Description - SDD). Doküman, SMarket-SDD-V1.0.0 tanımlama numarası ile sürüm ağacına kaydedilmiş olup, projenin ilk resmi tasarım sürümünü (Sürüm 1.0) ve Yayın-01 versiyonunu temsil etmektedir. Bu doküman, "SMarket Otomasyon Sistemi" için yazılım mimarisinin, algoritmik bileşenlerin ve donanım bağımsız arayüzlerin detaylı tasarım şartnamelerini kapsar.
+Doküman ve proje bütününde sıklıkla kullanılacak teknik kısaltmalar ve anlamları aşağıda belirtilmiştir:
+•	YKE (Yazılım Konfigürasyon Elemanı): Sistemi oluşturan mantıksal yazılım bileşenlerinin genel adıdır (Frontend bileşenleri, Backend servisleri vb.).
+•	ERP (Enterprise Resource Planning): Kurumsal Kaynak Planlama anlamına gelmekte olup SMarket'in sektörel türünü belirtir.
+•	FIFO (First-In-First-Out): "İlk Giren İlk Çıkar" esasına dayalı, ürün partilerinin (batches) son kullanma tarihlerine göre tahsis edildiği envanter takip algoritmasıdır.
+•	RBAC (Role-Based Access Control): Sistemin güvenlik kalkanını oluşturan "Rol Tabanlı Erişim Kontrolü" mekanizmasıdır.
+•	SDLC (Software Development Life Cycle): Yazılım geliştirme yaşam döngüsünü ifade eder.
+•	POS (Point of Sale): Kasiyerlerin satış işlemlerini yürüttüğü eşzamanlı satış noktası sistemidir.
+•	JWT (JSON Web Token): İstemci ile sunucu arasındaki oturum doğrulamasında kullanılan şifrelenmiş yetkilendirme standardıdır.
+1.2 Sisteme Genel Bakış SMarket projesi, perakende sektöründe (süpermarket zincirleri, yerel bakkallar, butik mağazalar) faaliyet gösteren işletmelerin uçtan uca tüm operasyonel yükünü otomatize etmek amacıyla tasarlanmış bütüncül bir yazılım çözümüdür. Yazılımın temel amacı; geleneksel reyondaki fiziksel stok durumu ile dijital veritabanındaki stok durumunu senkronize etmek, satılan ürünlerin vergisini (KDV) dinamik olarak anlık hesaplamak ve çalışan/müşteri verimliliğini üst düzeye çıkarmaktır.
+Genel Yapı: Sistem, teknik mimari açısından İstemci-Sunucu (Client-Server) prensibiyle çalışır. Sistem, veritabanı katmanında bulut tabanlı Neon Cloud (PostgreSQL) altyapısını kullanmaktadır. Sunucu ve bulut veritabanı arasındaki veri trafiği, db.js dosyasında yapılandırılan SSL güvenliği (rejectUnauthorized: false) ile şifrelenerek korunmaktadır. "Yönetici Portalı" ve "Kasiyer Portalı" olmak üzere iki farklı rol tabanlı kullanıcı arayüzü barındırır. Kasiyer paneli üzerinden yapılan her barkod okuma işlemi arka planda YKE stok motorunu çalıştırır ve FIFO mantığı ile raf süresi dolmaya en yakın partiden (batch) ürün düşümünü gerçekleştirerek satışı muhasebeleştirir.
+Geliştirme ve Operasyon Geçmişi: Proje, perakende sektöründeki manuel envanter takibinden kaynaklanan veri tutarsızlıklarını gidermek amacıyla 5 Sprint'ten oluşan Scrum metodolojisi ile kurgulanmıştır.
+ Sprint 1 (25 Mart): Proje iskeleti oluşturulmuş ve veritabanı altyapısı olarak bulut tabanlı Neon Cloud (PostgreSQL) seçilerek bağlantı ayarları tamamlanmıştır.
+ Sprint 2 (8 Nisan): Sistemin çekirdek mantığı olan FIFO motoru, kullanıcı şifrelerinin Bcrypt ile güvenli hale getirilmesi ve idari işlemlerin kayıt altına alındığı Audit Log yapısı tasarlanmıştır.
+ Sprint 3 (23 Nisan) : Satış (POS) modülü ve finansal hesaplama motorlarının geliştirilmesi aşamasına geçilmiştir.
+
+
+Paydaşlar:
+•	Müşteri ve Kullanıcı Birimleri: Sistemin doğrudan kullanıcıları perakende şube yöneticileri (Manager rolü) ve günlük satış yapan gişe elemanlarıdır (Cashier rolü). Sistemin bir diğer dolaylı müşterisi ise sadakat puanları kazanan son tüketicilerdir.
+•	Geliştirici ve Destek Birimleri: Sistemin uçtan uca tasarlanması, kodlanması ve DevOps barındırma hizmetleri "Salih Akoğlu ve Ediz Gün" tam yığın (full-stack) geliştirici takımı tarafından yürütülmektedir.
+•	Dış İşlevsel Birlikler: Sistem, market zinciri işletmecilerinin dışında, stoklar belirli bir eşiğin altına düştüğünde Nodemailer arayüzü sayesinde "Tedarikçi Firmalar" ile otomatik entegrasyon halinde (E-posta üzerinden sipariş tetikleyerek) çalışmaktadır.
+Sistem geliştirme sürecinde bu dokümana kılavuzluk eden İlgili Dokümanlar: SMarket-SRS-V1.0 (Yazılım Gereksinim Spesifikasyonları) ve SMarket-SPMP-V1.0 (Yazılım Proje Yönetim Planı) dosyalarıdır.
+1.3 Dokümana Genel Bakış Bu Yazılım Tasarım Dokümanı'nın (SDD) başlıca amacı, SRS dokümanında listelenen fonksiyonel ve fonksiyonel olmayan "Gereksinimlerin", yazılımcıların anlayacağı seviyede bir "Sistem Mimarisine" ve algoritmik iş süreçlerine (Sequence) nasıl dönüştürüldüğünü anlatmaktır. İçerik olarak; YKE bileşenlerinin birbirleriyle olan veri trafiğini, veritabanı Varlık-İlişki (ER-Diagram) tablolarını, harici Nodemailer arayüz bağlantılarını ve frontend-backend HTTP yönlendirmelerinin mimari iskeletini detaylıca inceler.
+
+2 İLGİLİ DOKÜMANLAR
+Bu Yazılım Tasarım Dokümanı'nın (SDD) oluşturulması sırasında referans alınan, gereksinimlerin ve yönetimsel sınırların belirlendiği diğer mühendislik dokümanları ve dış kaynaklar aşağıda listelenmiştir. Sistem tasarımı, tablo içindeki referans dokümanların belirlediği standartlar ve mimari kurallar çerçevesinde detaylandırılmıştır.
+
+
+Doküman No	Başlık / Tanım	Yayın Sürümü	Yayın Tarihi	Kaynak / Hazırlayan
+SM-SPMP-01	Software Project Management Plan (Yazılım Proje Yönetim Planı) 	v1.0 	11.02.2026 	Gazi Üni. Bilgisayar Müh. / Ediz Gün, Salih Akoğlu 
+SM-SRS-01	Software Requirements Specification (Yazılım Gereksinim Spesifikasyonları) 	v1.0	08.04.2026 	Gazi Üni. Bilgisayar Müh. / Salih Akoğlu, Ediz Gün 
+IEEE 1016-2009	IEEE Standard for Information Technology - Systems Design (SDD Format Kılavuzu)	Standart	20.07.2009	IEEE Standartlar Kurumu (Dış Kaynak)
+SM-NDML-01	Nodemailer API ve SMTP Entegrasyon Kılavuzu 	v6.9	10.01.2026	Nodemailer Resmi Dokümantasyonu (Dış Kaynak)
+SM-CODE-01	SMarket Kaynak Kodları ve Veritabanı Şeması 	Sprint 4	21.04.2026	GitHub SMarket Deposu / main Dalı 
+SM-EXT-01	RFC 7519 (JSON Web Token Standardı)	Standart	2015	IETF (Dış Kaynak)
+SM-EXT-02	Bcrypt Algorithm Specification	V2.4.3	2026	npmjs/bcrypt (Dış Kaynak)
+
+
+Revizyonlar
+Versiyon	Tarih	Açıklama	Yazar
+0.1	21.03.2026	SDD Taslak yapısının oluşturulması ve proje başlangıç ayarları.	Salih Akoğlu, Ediz Gün
+0.2	27.03.2026	Sprint 1 veritabanı (Neon DB) ve kullanıcı yönetimi mimarisinin eklenmesi.	Salih Akoğlu
+0.3	16.04.2026	Sprint 2 özelliklerinin (FIFO motoru, Bcrypt güvenliği, Audit Log yapısı) tasarımı.	Salih Akoğlu, Ediz Gün
+1.0	22.04.2026	Nihai SDD Teslimatı ve detaylı modül planlarının tamamlanması.	Salih Akoğlu, Ediz Gün
+
+
+
+3 YKE ÇAPINDA TASARIM KARARLARI
+Bu bölüm, SMarket yazılım sisteminin (YKE) genel işleyişi, kullanıcı deneyimi, veri güvenliği ve mimari yapısına dair alınan temel mühendislik kararlarını açıklamaktadır.
+a. YKE’nin Kabul Edeceği Girdiler ve Üreteceği Çıktılar İle İlgili Tasarım Kararları 
+Sistem, donanım bağımsız web tabanlı ve Katmanlı (3-Tier) bir mimari (React, Node.js, PostgreSQL) olarak tasarlanmıştır. Veri akışı standart internet protokolleri üzerinden gerçekleştirilir.
+•	Kabul Edilecek Girdiler: Sistem; Kasiyer portalından "barkod karakter dizilerini" veya donanımsal okuyuculardan gelen anlık girişleri ana stok tetikleyicisi olarak kabul eder. Yönetici portalından ürün tanımlama için JSON formatında veri dizilerini alır. Tüm yetkilendirilmiş API girişlerinde HTTP Headers içinde 8 saat geçerli "Bearer JWT Token" aranır.
+•	Üretilecek Çıktılar: Sistem, girdilere karşılık dinamik UI çıktıları üretir. POS ekranında otomatik hesaplanmış KDV dahil fiş tutarını döndürür. Arka planda SMTP/Nodemailer üzerinden e-posta formatında (HTML Payload) otomatik tedarik siparişleri çıktısı verir. Finansal modülde ise verileri Chart.js tabanlı grafiklere dönüştürerek yansıtır.
+b. Her Girdi veya Koşula Göre YKE Davranışı İle İlgili Tasarım Kararları 
+Sistemin davranış modeli, otomasyonel tepkilere ve finansal doğruluğa dayanır.
+•	FIFO Envanter Mantığı: Satış anında sistem son kullanma tarihi en yakın olan (expiry_date) partiyi otomatik olarak seçer ve stok düşümünü oradan gerçekleştirir. Bu algoritma, market fire oranını minimize etmek için backend tarafında izole şekilde kodlanmıştır.
+•	Asenkron Bildirimler: Ürün stoğu belirlenen eşiğin altına düştüğünde, ana satış akışını yavaşlatmamak adına e-posta gönderim işlemi asenkron (arka planda) olarak tetiklenir.
+c. Veri Tabanları / Veri Dosyalarının Kullanıcıya Nasıl Görüneceği İle İlgili Tasarım Kararları 
+Sistemde "Ham Veri İzolasyonu" mimarisi benimsenmiştir.
+•	Yönetici Arka Planı (Manager): Veritabanındaki audit_logs ve users gibi tablolar ham haliyle değil; isim, tarih ve işlem bazlı filtrelenerek temiz tablolar halinde sunulur. Benzersiz kimlik (UUID) değerleri arayüzde gizlenir.
+•	Kasiyer Arka Planı (Cashier): Kasiyerler şirket karlılığına veya personel verilerine erişemez. Veritabanı onlar için tamamen şeffaflaştırılmış olup, sadece ürün ismi, görsel stok uyarısı (status: expired/warning) ve sepet miktarı maskelenmiş şekilde gösterilir.
+d. Emniyet, Güvenlik ve Gizlilik Gereksinimlerini Karşılamak İçin Seçilen Yaklaşım 
+İdari kayıtların ve finansal işlemlerin güvenliği için çok katmanlı bir yaklaşım seçilmiştir:
+•	Veri ve Oturum Güvenliği: Şifreler veritabanında düz metin olarak değil, Bcrypt algoritması ile salted-hash yöntemiyle saklanır. Oturum yönetimi için 8 saatlik Stateless JWT yapısı kullanılarak yetki denetimleri backend middleware katmanında gerçekleştirilir.
+
+•	Veri Bütünlüğü ve Altyapı Güvenliği: Eşzamanlı satışlarda stok hatasını önlemek için veritabanı düzeyinde Satır Düzeyinde Kilitleme (Row-level Locking) mimarisi zorunlu kılınmıştır. Ayrıca sunucu ile bulut veritabanı (Neon Cloud) arasındaki iletişim, SSL sertifika doğrulaması (rejectUnauthorized: false) ile şifrelenmiştir.
+
+•	Denetim İzi: Tüm idari değişiklikler, değiştirilemez durumdaki audit_logs tablosuna timestamp ile kaydedilerek hesap verilebilirlik sağlanır.
+
+e. İstenilen Esnekliği, Elde Edilebilirliği, İdame Ettirilebilirliği Sağlamak Üzere Seçilen Yaklaşım 
+Sistem mimarisi, modüler ve ölçeklenebilir şekilde yapılandırılmıştır.
+•	Teknoloji ve Taşınabilirlik: İstemci tarafında React.js kullanımı sayesinde cihaz bağımsız (web tabanlı) erişim sağlanmıştır. Arka yüzde Node.js/Express kullanılması, gelecekte sisteme mobil uygulamaların kolayca entegre edilmesine (Esneklik) olanak tanır.
+•	Bulut Altyapısı: Veri katmanı için PostgreSQL uyumlu, serverless Neon Cloud platformu tercih edilmiştir. Bu seçim; anlık branching (dal oluşturma) özelliği ve otomatik ölçeklendirme imkanları sayesinde sistemin idame edilebilirliğini artırmaktadır.
+•	Metodoloji: Agile (Scrum) kullanımı, sistemin iterasyonlarla hızla geliştirilmesini ve güncel gereksinimlere uyarlanmasını sağlamıştır.
+
+4 YKE’NIN YAPISAL TASARIMI
+
+4.1 YKE Bileşenleri
+Bu paragraf Smarket Yazılım Konfigürasyon Elemanını oluşturan yazılım birimlerini tanımlar ve her birinin amacını, geliştirme durumunu ve donanım kaynak kullanım planını açıklar.
+
+Birim ID	Birim Adı	Katman	Geliştirme Türü
+SM-BE-001	AuthService	Backend	Yeni tasarım
+SM-BE-002	InventoryService (FIFO Motoru)	Backend	Yeni tasarım
+SM-BE-003	SalesService (POS & KDV)	Backend	Yeni tasarım
+SM-BE-004	SupplyNotificationService	Backend	Yeni tasarım
+SM-BE-005	LoyaltyPointService	Backend	Yeni tasarım
+SM-BE-006	ProfitReportService	Backend	Yeni tasarım
+SM-BE-007	AuditLogService	Backend	Yeni tasarım
+SM-DB-001	PostgreSQL Şeması	Veri katmanı	Yeni tasarım
+SM-EXT-001	Nodemailer E-Posta Adaptörü	Harici servis	Mevcut kütüphane — tekrar kullanım
+SM-FE-001	ManagerPortal (React)	Frontend	Yeni tasarım
+SM-FE-002	CashierPortal (React)	Frontend	Yeni tasarım
+
+
+4.1.2 Backend Yazılım Birimlerinin Detayı
+ 
+SM-BE-001 — AuthService
+Kullanıcı kimlik doğrulama, şifre doğrulama (Bcrypt) ve JWT üretimi/doğrulaması işlemlerini yürütür. RBAC (Rol Tabanlı Erişim Kontrolü) kural setini içerir; her API isteğinde Express middleware zincirinde çalışır. İlgili gereksinimler: SYS-F-001 – SYS-F-005.
+Donanım kaynakları: İşlemci kullanımı düşük; JWT imzalama işlemi mikrosaniye düzeyindedir. Bellek: oturum başına ~1 KB.
+
+SM-BE-002 — InventoryService (FIFO Motoru)
+Ürün ve parti (batch) CRUD işlemlerini, FIFO stok seçim algoritmasını ve eşik tabanlı tedarik tetikleme mantığını kapsar. Satış işlemi sırasında son kullanma tarihi en yakın olan partiden başlayarak satır düzeyinde kilitli güncelleme gerçekleştirir. İlgili gereksinimler: SYS-F-010 – SYS-F-015.
+Donanım kaynakları: Eşzamanlı 20 satış isteğini destekleyecek şekilde veritabanı bağlantı havuzu ile optimize edilmiştir. Batchler arası geçiş işlemleri için ek bellek kullanımı ihmal edilebilir düzeydedir.
+
+SM-BE-003 — SalesService (POS & KDV)
+Satış fişi oluşturma, ürün başına KDV hesaplama (%1/%10/%20), iade işleme ve FIFO birimiyle koordineli stok düşümünü gerçekleştirir. İşlem bütünlüğü için atomik veritabanı transaction'ları kullanır. İlgili gereksinimler: SYS-F-020, SYS-F-021, SYS-F-024, INT-012.
+
+SM-BE-004 — SupplyNotificationService
+Stok eşik tetikleme olaylarını dinler, Nodemailer adaptörünü asenkron kuyruk üzerinden çağırır ve sonuçları supply_notifications tablosuna kaydeder. En fazla 3 yeniden deneme mekanizmasını yönetir. İlgili gereksinimler: SYS-F-030 – SYS-F-033, INT-020 – INT-022.
+
+SM-BE-005 — LoyaltyPointService
+Müşteri puan bakiyesi hesaplama (100 TL = 1 puan), puan kullanımı ve geçmiş sorgulama işlemlerini yürütür. Puan güncellemeleri SalesService transaction'ı içinde atomik olarak gerçekleştirilir. İlgili gereksinimler: SYS-F-040 – SYS-F-042.
+
+SM-BE-006 — ProfitReportService
+Günlük/haftalık/aylık kâr-zarar raporu üretir. Kâr formülü: Net Kâr = Satış Fiyatı − Maliyet Fiyatı − KDV Tutarı. Maliyet ile satış verileri arasındaki tutarsızlıkları çapraz referans raporuyla tespit eder. İlgili gereksinimler: SYS-F-050 – SYS-F-053.
+
+SM-BE-007 — AuditLogService
+Her idari değişikliği (fiyat değişikliği, stok düzeltmesi, maaş güncellemesi vb.) 'Kim–Ne Yaptı–Ne Zaman' formatında ve UTC timestamp ile audit_logs tablosuna yazar. Kayıtlar yalnızca okunabilir; güncelleme ve silme operasyonları veritabanı düzeyinde kısıtlanmıştır. İlgili gereksinimler: SYS-F-060, SYS-F-061.
+
+
+4.1.3 Veritabanı Birimi
+SM-DB-001 — PostgreSQL Şeması
+SMarket'in tüm kalıcı verilerini barındıran ilişkisel veritabanı şemasıdır. Aşağıdaki tablo gruplarından oluşmaktadır:
+•	users, roles  –  Kullanıcı ve yetki yönetimi
+•	products, batches  –  Ürün kataloğu ve parti takibi (FIFO)
+•	sales, sale_items, returns  –  Satış ve iade kayıtları
+•	customers, loyalty_points  –  Müşteri ve puan yönetimi
+•	audit_logs  –  Değiştirilemez denetim günlükleri
+•	supply_notifications  –  Tedarik bildirimi takibi
+Şema bütünlüğü; yabancı anahtar kısıtlamaları, CHECK kısıtları ve NOT NULL gereklilikleriyle güvence altına alınmıştır.
+
+
+4.1.4  Harici Servis Birimi
+SM-EXT-001 — Nodemailer E-Posta Adaptörü
+Tedarikçi e-posta bildirimlerini göndermek için Nodemailer kütüphanesi kullanılacaktır. Bu mevcut bir açık kaynak kütüphanesidir ve tekrar kullanım amacıyla entegre edilmektedir. SMTP yapılandırması (host, port, kimlik bilgileri) ortam değişkenleri (.env) aracılığıyla sağlanacak; kaynak kodda yer almayacaktır. İlgili gereksinimler: INT-020 – INT-022.
+
+4.2 Genel Çalıştırma (Execution) Kavramı
+Bu paragraf, SMarket'in yazılım birimleri arasındaki çalışma zamanı dinamiklerini; kontrol akışını, veri akışını, eşzamanlılık mekanizmalarını ve istisna yönetimini açıklamaktadır.
+
+4.2.1  Genel Çalışma Akışı
+Sistem, istemciden sunucuya doğru akan istek-yanıt modeli üzerinde çalışır. Temel çalışma sırası aşağıdaki gibidir:
+•	1. İstemci (React), HTTP/HTTPS üzerinden API isteği gönderir.
+•	2. Express middleware katmanı JWT'yi doğrular; geçersiz token durumunda 401 Unauthorized yanıtı döner.
+•	3. İlgili servis birimi (AuthService, SalesService vb.) iş mantığını çalıştırır.
+•	4. Servis, gerektiğinde PostgreSQL'e SQL sorgusu gönderir; sonuç JSON olarak döner.
+•	5. Servis, yanıtı HTTP durum kodu ile birlikte istemciye iletir.
+
+4.2.2  Satış İşlemi — Kritik Yürütme Akışı
+Satış işlemi, birden fazla birimin koordineli çalışmasını gerektiren ve eşzamanlılık riskinin en yüksek olduğu senaryodur. Yürütme sırası:
+•	1. CashierPortal → SalesService: Barkod/ürün adıyla ürün arama isteği (SYS-F-024).
+•	2. SalesService → InventoryService: FIFO partisi seçimi ve parti seçilirken ilgili stok satırı işlem bitene kadar kilitlenir. 
+•	3. SalesService: KDV hesaplama; ürün kategorisine göre %1/%10/%20 oranı uygulanır (SYS-F-020).
+•	4. SalesService → LoyaltyPointService: Puan birikimi veya kullanımı hesaplanır.
+•	5. SalesService: Atomik transaction içinde sales, sale_items tabloları ve batch.quantity güncellenir. Satış işlemi; stok düşümü, log atılması ve puan güncellemelerini kapsayacak şekilde tek bir atomik transaction (BEGIN/COMMIT) bloğu içinde yürütülür. Hata durumunda tüm süreç ROLLBACK ile geri alınır.
+•	6. InventoryService: Batch miktarı eşiğin altına düştüyse SupplyNotificationService'e olay iletilir (SYS-F-015).
+•	7. SupplyNotificationService: E-posta kuyruğuna görev eklenir (asenkron — ana akışı bloke etmez, INT-020).
+•	8. AuditLogService: İşlem kaydı audit_logs tablosuna yazılır (SYS-F-060).
+•	9. SalesService → CashierPortal: Başarı yanıtı ve fiş verisi döner.
+
+4.2.3  Eşzamanlılık ve Senkronizasyon
+Eşzamanlı satış işlemlerinde aynı parti üzerinde yarış koşulu (race condition) oluşmasını engellemek amacıyla PostgreSQL satır düzeyinde kilitleme (row-level locking) kullanılır. FIFO seçim sorgusu aşağıdaki mantıkla çalışır:
+SELECT * FROM batches WHERE product_id = $1 AND quantity > 0 ORDER BY expiry_date ASC LIMIT 1 FOR UPDATE;
+Bu yapı, iki eşzamanlı isteğin aynı partiyi seçmesini önler. Kilit, transaction commit veya rollback ile serbest bırakılır (INT-011, SYS-F-012).
+
+4.2.4  İstisna ve Hata Yönetimi
+Sistem genelinde aşağıdaki hata yönetimi stratejileri uygulanır:
+Hata Senaryosu	Yönetim Yöntemi	İlgili Gereksinim
+Stok yetersizliği (satış sırasında)	Transaction rollback; istemciye 409 Conflict döner	SYS-F-012
+JWT süresi dolmuş/geçersiz	401 Unauthorized; oturum yenileme yönlendirmesi	SYS-F-005
+E-posta gönderim hatası	En fazla 3 yeniden deneme; 'failed' olarak loglanır	SYS-F-031
+Veritabanı bağlantı hatası	Bağlantı havuzundan otomatik yeniden bağlanma	INT-010
+Geçersiz KDV oranı	Backend doğrulaması; 400 Bad Request döner	SYS-F-020
+
+
+
+
+
+
+
+
+
+
+
+
+
+4.2.5  Zamanlama ve Performans
+Sistem kaynak kullanımı aşağıdaki hedefler çerçevesinde tasarlanmıştır:
+•	Oturum açma isteği yanıt süresi: ≤ 3 saniye (SYS-F-001).
+•	Puan bakiyesi güncelleme süresi: ≤ 5 saniye (SYS-F-041).
+•	Genel API yanıt süresi: ≤ 500 ms normal koşullarda (INT-004).
+•	Veritabanı: Eşzamanlı 20 bağlantı; bağlantı havuzu aşıldığında kuyruk mekanizması devreye girer.
+
+
+5  YKE DETAYLI PLANI
+Bu bölüm, SMarket YKE'sine ait yazılım birimlerini proje tanımlayıcıları ile birlikte ayrıntılı biçimde ele almaktadır. Her birim için; tasarım kararları, kısıtlamalar, kullanılan programlama dili, mantık ve veri akışı açıklanmaktadır.
+
+5.1  SM-BE-001 — AuthService
+5.1.1  Birim Tasarım Kararları
+JWT tabanlı durumsuz (stateless) kimlik doğrulama seçilmiştir. Bu kararın gerekçesi; sunucu tarafında oturum depolama gereksinimine ilişkin ölçeklenebilirlik sorunlarını ortadan kaldırmak ve RESTful API felsefesiyle uyumlu bir yapı oluşturmaktır. Token'ın istemci tarafında saklanması (HTTP-only cookie veya Authorization header) güvenlik gereksinimlerini karşılar.
+
+5.1.2  Programlama Dili
+Node.js (JavaScript/TypeScript) — Express framework ile entegre middleware olarak çalışır.
+
+5.1.3  Giriş, Çıkış ve Veri Akışı
+Parametre	Yön	Veri Tipi	Açıklama
+username	Giriş	VARCHAR(50)	Kullanıcı adı
+password	Giriş	STRING	Düz metin şifre (Bcrypt ile doğrulanır)
+jwt_token	Çıkış	STRING	8 saatlik geçerlilik süreli JWT
+role	Çıkış	ENUM	'manager' veya 'cashier'
+error_code	Çıkış	INTEGER	401: geçersiz kimlik, 403: yetkisiz
+
+
+5.1.4  Mantık
+•	Başlangıç durumu: Kullanıcı kayıtsız; kimlik bilgileri users tablosunda aranır.
+•	Kontrol akışı: username bulunursa → Bcrypt.compare(password, hash) → eşleşme varsa JWT üretilir, yoksa 401 döner.
+
+5.2  SM-BE-002 — InventoryService (FIFO Motoru)
+5.2.1  Birim Tasarım Kararları
+FIFO mantığı veritabanı katmanında uygulanmıştır. Uygulama katmanında sıralama yapılmaması, eşzamanlı işlemlerde tutarsızlık riskini ortadan kaldırır. Batch miktarı sıfırlandığında sistem bir sonraki partiye otomatik geçiş yapar; bu geçiş tek bir transaction içinde gerçekleşir.
+5.2.2  Kısıtlamalar
+•	batch.quantity hiçbir zaman negatife düşemez (CHECK >= 0 kısıtı).
+•	Eşzamanlı iki istek aynı partiyi seçemez (row-level lock).
+•	Son kullanma tarihi >= 0 gün olan partiler satışa kapalıdır.
+
+5.2.3  Giriş, Çıkış ve Veri Akışı
+Parametre	Yön	Veri Tipi	Açıklama
+product_id	Giriş	UUID	Satılacak ürünün kimliği
+quantity_requested	Giriş	INTEGER	Satılmak istenen miktar
+selected_batch	Çıkış	OBJECT	FIFO ile seçilen parti (batch_id, expiry_date, cost_price)
+remaining_qty	Çıkış	INTEGER	Güncelleme sonrası kalan stok
+threshold_alert	Çıkış	BOOLEAN	Eşik altına düşüldüyse true
+
+
+5.2.4  Mantık
+•	Başlangıç durumu: Ürün ID alınır; aktif (is_active = true) ve miktarı > 0 olan partiler listelenir.
+•	FIFO seçimi: ORDER BY expiry_date ASC LIMIT 1 FOR UPDATE ile son kullanma tarihi en yakın olan ürünü önceliklendirecek şekilde seçim yapar.
+•	Talep edilen miktar mevcut partiden (batch) fazla ise, sistem otomatik olarak bir sonraki uygun partiye (FIFO sırasına göre) geçer ve toplam miktar karşılanana kadar düşüm işlemini bir döngü içerisinde devam ettirir.
+•	Batch miktarı eşik değerinin altına düşerse threshold_alert = true döner ve SupplyNotificationService tetiklenir (SYS-F-015).
+•	7 günden az kalan partiler renk kodu meta verisi ile döner (SYS-F-013).
+
+5.3  SM-BE-003 — SalesService (POS & KDV)
+5.3.1  Birim Tasarım Kararları
+Satış işleminin atomik olması için tüm adımlar (stok düşümü, KDV hesaplama, puan güncelleme, fiş oluşturma) tek bir PostgreSQL transaction bloğu içinde yürütülür. İade işlemi yeni bir kayıt oluşturur; mevcut satış kaydı değiştirilmez (immutable audit trail).
+5.3.2  KDV Hesaplama Mantığı
+KDV tutarı her ürün kalemi için bağımsız hesaplanır:
+KDV_Tutarı = Birim_Fiyat × Miktar × (KDV_Oranı / 100)
+Toplam tutar: Net_Tutar + Toplam_KDV_Tutarı. Hassasiyet kaybını önlemek için hesaplamalar NUMERIC(10,2) tipinde gerçekleştirilir.
+
+5.3.3  Giriş, Çıkış ve Veri Akışı
+
+Parametre	Yön	Veri Tipi	Açıklama
+cart_items[]	Giriş	ARRAY	Her kalem: {product_id, quantity, barcode,price}
+cashier_id	Giriş	UUID	İşlemi gerçekleştiren kasiyerin kimliği
+customer_id	Giriş	UUID (NULL)	Puan işlemi için müşteri; anonim satışlarda NULL
+points_to_use	Giriş	INTEGER	Kullanılmak istenen sadakat puanı
+sale_receipt	Çıkış	OBJECT	sale_id, total_amount, vat_amount, points_earned
+error_code	Çıkış	INTEGER	409: yetersiz stok, 422: geçersiz KDV oranı
+
+
+5.4  SM-BE-004 — SupplyNotificationService
+5.4.1  Birim Tasarım Kararları
+Servis, olay güdümlü (event-driven) mimaride çalışır. InventoryService'ten threshold_alert olayı aldığında kuyruk sistemine görev ekler. Bu yaklaşım, e-posta gönderimi başarısız olsa bile satış işleminin etkilenmemesini garantiler (INT-020).
+5.4.2  Yeniden Deneme Mantığı
+•	1. deneme: Tetikleme anında.
+•	2. deneme: 5 dakika sonra (birinci hata durumunda).
+•	3. deneme: 15 dakika sonra (ikinci hata durumunda).
+•	3 deneme de başarısız olursa: status = 'failed', error_message alanı doldurulur.
+
+5.4.3  Giriş, Çıkış ve Veri Akışı
+Parametre	Yön	Veri Tipi	Açıklama
+product_id	Giriş	UUID	Eşiği aşan ürün
+current_stock	Giriş	INTEGER	Tetikleme anındaki stok seviyesi
+ordered_qty	Giriş	INTEGER	Otomatik sipariş miktarı (manager konfigürasyonu)
+notification_id	Çıkış	UUID	Oluşturulan bildirim kaydının kimliği
+status	Çıkış	ENUM	'sent', 'failed', 'pending'
+
+
+5.5  SM-BE-007 — AuditLogService
+5.5.1  Birim Tasarım Kararları
+Denetim günlüğü sadece INSERT işlemi kabul eder; UPDATE ve DELETE operasyonları veritabanı düzeyinde revoke edilmiş ayrıcalıklarla engellenir. Bu sayede hiçbir uygulama kodu — kasıtlı veya hatalı şekilde — geçmiş kaydı değiştiremez (SYS-F-061).
+
+5.5.2  Giriş, Çıkış ve Veri Akışı
+Parametre	Yön	Veri Tipi	Açıklama
+user_id	Giriş	UUID	İşlemi gerçekleştiren kullanıcı
+action_type	Giriş	VARCHAR(100)	Örn: PRICE_CHANGE, STOCK_OVERRIDE, SALARY_UPDATE
+table_affected	Giriş	VARCHAR(50)	Değiştirilen tablonun adı
+old_value	Giriş	JSONB	Değişiklik öncesi değer
+new_value	Giriş	JSONB	Değişiklik sonrası değer
+log_id	Çıkış	BIGSERIAL	Sıralı günlük kaydı kimliği
+
+
+5.5.3  Mantık
+•	Tüm servis birimleri, idari değişiklik içeren her işlem sonunda AuditLogService.write() metodunu çağırır.
+•	JSONB formatındaki old_value ve new_value alanları farklı modüllerin veri yapılarını tek şemada destekler.
+•	Günlük kayıtları yalnızca Yönetici rolü tarafından okunabilir (SYS-F-060, SYS-F-061).
+
+5.6  SM-DB-001 — PostgreSQL Şema Detayı
+5.6.1  Birim Tasarım Kararları
+Sistem, veri katmanını barındırmak için PostgreSQL tabanlı sunucusuz (serverless) Neon Cloud platformunu kullanır. Bulut entegrasyonu için db.js üzerinde rejectUnauthorized: false parametresiyle SSL bağlantı güvenliği yapılandırılmıştır. 
+Şema normalleştirme kuralları (3NF) çerçevesinde tasarlanmıştır. FIFO sıralama gereksinimine bağlı olarak batches.expiry_date sütununa B-tree indeksi eklenmiştir. Büyük hacimli audit_logs tablosuna timestamp sütunu üzerinde indeks uygulanarak sorgu performansı optimize edilmiştir.
+
+5.6.2  Kritik Kısıtlamalar ve İş Kuralları
+Tablo	Kısıt	Kural Açıklaması
+batches	quantity >= 0	Stok miktarı negatife düşemez.
+products	vat_rate IN (1, 10, 20)	Yalnızca tanımlı KDV oranları geçerlidir.
+audit_logs	INSERT only (revoke UPDATE, DELETE)	Geçmiş kayıtları değiştirilemez.
+sale_items	quantity > 0	Sıfır adetli kalem kaydedilemez.
+users	role IN ('manager', 'cashier')	Tanımsız roller reddedilir.
+
+
+6 GEREKSİNİMLERİN İZLENEBİLİRLİĞİ
+
+Bu bölüm, SMarket Yazılım Gereksinim Spesifikasyonları (SRS) dokümanında tanımlanan işlevsel ve harici gereksinimler ile bu Yazılım Tasarım Dokümanı (SDD)'nda tasarlanan yazılım alt birimleri (fonksiyonlar, bileşenler) arasındaki çift yönlü bağıntıyı haritalandırmak amacıyla oluşturulmuştur. İzlenebilirlik matrisi sayesinde hiçbir gereksinimin tasarım aşamasında unutulmadığı ve hiçbir tasarım parçasının gereksiz yere koda eklenmediği kanıtlanmıştır.
+
+Yazılım Konfigürasyon Elemanını (YKE) oluşturan temel yazılım birimleri tasarımda şu kodlarla isimlendirilmiştir:
+•	SM-BE-001 (AuthService): JWT Token üreten ve kullanıcı rollerini (RBAC) doğrulayan yazılım birimi. 
+•	SM-BE-002 (InventoryEngine): FIFO mantığıyla en eski partiyi (batches tablosu) bulup stoktan düşen arka plan yazılım birimi. 
+•	SM-BE-003 (SalesController): KDV sınıfını hesaplayıp, sepeti sales ve sale_items tablolarına işleyen yazılım birimi. 
+•	SM-BE-004 (MailTriggerWorker): Stok eşiği aşıldığında Nodemailer ile asenkron mail atan yazılım birimi. 
+•	SM-FE-001 / SM-FE-002 (ReactUI Modülleri): Kasiyer ve Yönetici ekranlarını render eden frontend yazılım birimi. 
+
+a. Yazılım Birimlerinden -> Gereksinimlere İzlenebilirlik (Tasarım Doğrulaması)
+Bu tablo, mimaride tasarlanan modüllerin (YTD Birimleri) aslında hangi resmi iş ihtiyacını (SRS Gereksinimini) karşılamak için orada bulunduğunu gösterir (İleri Yönlü İzlenebilirlik).
+
+Yazılım Birimi (SDD Modülü)	Karşıladığı SRS Gereksinim Referansı	Karşılık Gelen Neden / İşlev
+SM-BE-001 (AuthService)	SYS-F-001, SYS-F-003, SEC-001, SEC-002	Kullanıcı girişi, rol tespiti ve şifrelerin Bcrypt ile doğrulanarak yetkisiz (kasiyerin yöneticiye) girişlerinin engellenmesi. 
+SM-BE-002  (InventoryService)	SYS-F-010, SYS-F-011, SYS-S-001	Hangi partiden ürün düşüleceği (FIFO) algoritmasının işletilmesi ve Satır Düzeyi Kilit (Row-level lock) atılması. 
+SM-BE-003  (SalesService)	SYS-F-020, SYS-F-060	%1, %10, %20 KDV dilimlerinin uygulanması ve satış sonrasında Audit Log tablosuna "Değiştirilemez" iz kaydının atılması. 
+SM-BE-004  (SupplyNotificationService)	SYS-F-030, SYS-INT-004, SYS-S-002	Harici arayüze bağlanıp "Sipariş Paketi (OrderMailPayload)" oluşturması ve Spam önleyici günlük hız limitine uyması. 
+SM-FE-001 / SM-FE-002  (ReactUI Modülleri)	SYS-F-052, ENV-001	Raporların Chart.js grafikleriyle gösterilmesi ve işletim sistemi bağımsız web tarayıcı arayüzü sunulması. 
+
+
+b. Gereksinimlerden -> Yazılım Birimlerine İzlenebilirlik (Eksiksizlik Doğrulaması)
+Bu tablo, SRS'te taahhüt edilen özelliklerin tasarımda nerede kodlanacağını/yer alacağını gösterir (Geri Yönlü İzlenebilirlik). Tasarımda boşluk (unutulan gereksinim) olmadığını teyit eder.
+
+SRS Gereksinim Referansı	Tahsis Edildiği Yazılım Birimi (SDD)	Tasarımdaki Karşılığı
+SYS-F-012: Parti bittiğinde yeni partiye geçiş (FIFO).	SM-BE-002 (InventoryService)	İstek döngüsünde stok miktarı yetersizse break yerine kalan miktarla döngüye devam eden fonksiyon mimarisi. 
+SYS-F-042: Sadakat Puan Sistemi.	SM-BE-003 (SalesService) & SM-FE-002 (CashierPortal)	Satış anında puan hesaplama; points_earned/used kolonlarının güncellenmesi ve arayüzde gösterimi.
+SEC-008: TLS Ağ Şifrelemesi.	SM-BE-001 (AuthService) & SM-BE-004 (SupplyNotificationService)	Tüm API uç noktalarının HTTPS/SSL üzerinden konfigüre edilmesi ve Neon Cloud SSL bağlantısı.
+SYS-F-050: Kâr Hesaplama Formülü.	SM-FE-001 (ManagerPortal)	Net Kâr = Satış Fiyatı - Maliyet Fiyatı - KDV formülünü çalıştıran aggregate fonksiyonunun tasarlanması.
+
+
+7 NOTLAR
+Bu bölüm, SMarket Yazılım Tasarım Dokümanı'nın (SDD) ve sistem mimarisinin tam olarak anlaşılabilmesi için gerekli olan geçmiş bilgileri, teknik terimlerin açıklamalarını ve projede kullanılan standart kısaltmaların sözlüğünü içerir. 
+7.1 Kısaltmalar ve Anlamları
+Aşağıdaki liste, bu doküman içerisinde geçen teknik kısaltmaların İngilizce açılımlarını ve Türkçe tam karşılıklarını belirtmektedir:
+•	API (Application Programming Interface): Uygulama Geliştirme Arayüzü (Backend ve Frontend'in konuşma köprüsü). 
+•	ERP (Enterprise Resource Planning): Kurumsal Kaynak Planlama. 
+•	FIFO / FEFO (First-In-First-Out / First-Expired-First-Out): "İlk Giren İlk Çıkar" esasına dayalı, ancak SMarket özelinde son kullanma tarihlerine (expiry_date) göre önceliklendirme yapan tahsis algoritmasıdır.
+•	HTTP/HTTPS (Hypertext Transfer Protocol Secure): Güvenli Hiper Metin Transfer Protokolü. 
+•	JSON (JavaScript Object Notation): İstemci ve sunucu arasındaki hafif yapılandırılmış veri taşıma formatı. 
+•	JWT (JSON Web Token): Web ortamında güvenli bilgi ve yetki transferini sağlayan şifreli anahtar. 
+•	KDV (Katma Değer Vergisi): Ürünlerin durumuna göre devlet tarafından atanan vergi oranı sınıfı (VAT). 
+•	POS (Point of Sale): Kasiyer terminali, elektronik satış noktası arayüzü. 
+•	RBAC (Role-Based Access Control): Rol Tabanlı Erişim Kontrolü. 
+•	SMTP (Simple Mail Transfer Protocol): Basit Posta Aktarım Protokolü (Tedarikçi maillerinin iletim protokolü). 
+•	SRS (Software Requirements Specification): Yazılım Gereksinim Spesifikasyonları dokümanı. 
+•	UML (Unified Modeling Language): Birleşik Modelleme Dili (Tasarım ER ve Akış şemasal standardı). 
+•	YKE (Yazılım Konfigürasyon Elemanı): Sistemi alt ve üst bileşenlere ayıran temel mantıksal yapı taşı. 
+7.2 Teknik Terimler Sözlüğü (Kavramsal Açıklamalar)
+•	Audit Log (Denetim İzi): SMarket sistemindeki yöneticilerin yaptığı her kritik işlemi (fiyat değişimi, stok güncellemesi, rol değişikliği) değiştirmeye kapalı bir biçimde, zaman ve kişi damgasıyla (timestamp) kaydeden şeffaf güvenlik veritabanıdır. 
+•	Batch (Parti): Aynı ürünün, belirli bir varış tarihi, tahmini son kullanma tarihi ve birim geliş maliyeti ile depoya giren her bir ayrı alım kümesini temsil eder. Sistem ürün bazlı değil, bu "parti (batch)" bazlı stok takip eder. 
+•	Endpoint (Uç Nokta): Beklenen veri formatının ve işlemin gerçekleştirilmesi için SMarket Backend'inde tanımlanmış olan URL hedefleridir (Örn: POST /api/sales). 
+•	Nodemailer: JavaScript tabanlı Node.js sunucusundan harici dünyaya (örneğin tedarikçilerin mail kutusuna) otomatik e-posta atmayı sağlayan aracı kütüphanedir. 
+•	Payload (Taşıma Yükü): İletişim ağı (Network) üzerinden bir sistemden diğerine gönderilen JSON formatındaki asıl veri paketidir (Örn: Sepetteki ürün listesinin gönderilmesi). 
+•	Row-level Locking (Satır Düzeyinde Kilit): Eşzamanlı iki kasiyer işleminin aynı stoğa erişmesi esnasında ilk sıradaki işlem bitmeden veritabanı satırının başkası tarafından güncellenmesini engelleyen teknik veri bütünlüğü (database integrity) önlemidir. 
+•	Soft Delete (Yazılımsal/Görsel Silme): Mimari kararlar gereği sistemden hiçbir varlığın kalıcı fiziksel olarak silinmeyip, sadece kullanıcı arayüzlerinde gizlenmesini (is_active=false yapılması) sağlayan güvenlik yaklaşımıdır. 
+8 EKLER
+
+EK-A : Veritabanı Varlık-İlişki (ER) Diyagramı
+Neon Cloud üzerinde yapılandırılan ilişkisel veritabanı şemasıdır. Bu diyagram; users, products, batches, sales, sale_items ve audit_logs tabloları arasındaki Foreign Key bağlantılarını ve veri tiplerini göstermektedir.
+
+
+
+
+
+
+
+
+
+
+
+
+EK-B Sistem Akış Diyagramı (Flowchart)
+Kasiyerin barkod okutma işlemiyle tetiklenen; FEFO tabanlı stok tahsisini, atomik transaction yönetimini ve asenkron Nodemailer bildirim süreçlerini içeren uçtan uca iş akışıdır .
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+EK-C Kullanıcı Arayüzü (UI) Tasarımları 
+Görsel 3: Yönetici Portalı (Manager Dashboard): Bu ekran; ürün tanımlama, anlık stok takibi ve personel maaş/durum yönetiminin yapıldığı merkezi kontrol panelidir.
+
+
+Görsel 4: Kasiyer Portalı Satış Ekranı: Kasiyerlerin barkod girişi yaptığı, hızlı ürün kartlarını kullandığı ve güncel fiş takibini gerçekleştirdiği POS arayüzüdür.
+Kaynakça
+IEEE Standard 1016-2009. (2009). IEEE Standard for Information Technology—Systems Design—Software Design Descriptions. IEEE Standartlar Kurumu.
+Akoğlu, S., & Gün, E. (2026). SMarket-SRS-V1.0: Yazılım Gereksinim Spesifikasyonları Dokümanı. Gazi Üniversitesi Bilgisayar Mühendisliği Bölümü.
+Gün, E., & Akoğlu, S. (2026). SMarket-SPMP-V1.0: Yazılım Proje Yönetim Planı. Gazi Üniversitesi Bilgisayar Mühendisliği Bölümü.
+ Neon Cloud. (2026). Neon Cloud Documentation: Serverless PostgreSQL and SSL Connection Standards.
+React Documentation. (2026). Web Based UI Component Architecture and Hooks Reference.
+Node.js & Express Framework. (2026). RESTful API Development and Middleware Standards Documentation.
+RFC 7519. (2015). JSON Web Token (JWT) Standard for Security and Authentication. IETF.
+Bcrypt.js Library. (2026). Bcrypt Algorithm Specification for Password Hashing and Salting.
+Nodemailer API. (2026). Nodemailer API Reference: SMTP Integration and Notification Services.
+Chart.js. (2026). Chart.js: HTML5 Canvas Based Data Visualization Library.
